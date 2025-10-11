@@ -8,17 +8,22 @@ import {
   ScrollView,
   TouchableOpacity,
   useWindowDimensions,
+  Modal,
+  Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation';
+import { RootStackParamList, TabKey } from '../navigation';
 import useGameStore from '../store/gameStore';
 import Toast from 'react-native-toast-message';
 import EventLog from '../components/EventLog';
 import { Profile } from '../types/profile';
-import { characters } from '../constants/characters';
+import { characters, resolveAvatar } from '../constants/characters';
+
+const FIRST_NAMES = ['Alex','Sam','Taylor','Jordan','Casey','Riley','Jamie','Morgan','Charlie','Avery','Quinn','Dakota','Parker','Rowan','Sydney','Elliot'];
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Game'>;
 
@@ -35,23 +40,49 @@ function countryCodeToFlag(code?: string) {
 
 export default function GameScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const navHeight = useGameStore((s) => s.navHeight);
   const { age, money, advanceYear, reset } = useGameStore();
-  const { width } = useWindowDimensions();
+  // dynamic stats (0-100)
+  const happiness = useGameStore((s) => s.happiness);
+  const health = useGameStore((s) => s.health);
+  const smarts = useGameStore((s) => s.smarts);
+  const looks = useGameStore((s) => s.looks);
+  const { width, height: windowHeight } = useWindowDimensions();
   const compact = width < 380;
   // local selected nav item (used for active-state highlighting)
-  const [selectedNav, setSelectedNav] = React.useState<string>(route?.name ?? 'Game');
+  // default selected tab can be passed via navigation param initialTab
+  const initialTab = (route?.params as any)?.initialTab as TabKey | undefined;
+  const storeCurrentTab = useGameStore((s) => s.currentGameTab);
+  const [selectedNav, setSelectedNav] = React.useState<TabKey>(initialTab ?? storeCurrentTab ?? 'Home');
+  // keep the central store in sync so AppShell can read the active tab
+  React.useEffect(() => {
+    const setTab = useGameStore.getState().setCurrentGameTab;
+    setTab && setTab(selectedNav);
+  }, [selectedNav]);
+
+  // listen for external tab changes (AppShell sets store when bottom nav is pressed)
+  React.useEffect(() => {
+    if (storeCurrentTab && storeCurrentTab !== selectedNav) {
+      setSelectedNav(storeCurrentTab);
+    }
+  }, [storeCurrentTab]);
   // prefer store profile, fallback to navigation param
   const storeProfile: Profile | undefined = useGameStore((s) => s.profile);
   const paramProfile = route?.params?.profile as Profile | undefined;
   const profile = storeProfile ?? paramProfile;
 
-  const avatarSource =
-    profile && typeof profile.avatar === 'number' && characters[profile.avatar]
-      ? characters[profile.avatar]
-      : undefined;
+  const avatarSource = profile ? resolveAvatar(profile) : undefined;
 
   // local state to force regeneration of suggestions
   const [suggestSeed, setSuggestSeed] = React.useState(0);
+
+  // measure the stats card height so we can pad the ScrollView to scroll under it
+  const [statsHeight, setStatsHeight] = React.useState<number>(0);
+  // debug: compute spacing values and optionally show overlay in dev
+  const computedPaddingBottom = insets.bottom + (navHeight || 86) + (statsHeight || 0);
+  const statsBottomOffset = insets.bottom + (navHeight || 86);
+
+  // debug logging removed for production
 
   type Suggestion = {
     id: string;
@@ -163,40 +194,196 @@ export default function GameScreen({ route, navigation }: Props) {
     </View>
   );
 
+  // Relationships panel
+  const RelationshipsPanel = () => {
+    const [childrenExpanded, setChildrenExpanded] = React.useState(false);
+    const [selectedMember, setSelectedMember] = React.useState<any | null>(null);
+    const [modalVisible, setModalVisible] = React.useState(false);
+
+    const openMember = (m: any) => {
+      setSelectedMember(m);
+      setModalVisible(true);
+    };
+
+    const closeModal = () => {
+      setModalVisible(false);
+      setSelectedMember(null);
+    };
+
+    const partner = profile?.partner;
+    const parents = profile?.family?.parents ?? [];
+    const siblings = profile?.family?.siblings ?? [];
+    // children may be present in family with relation 'child'
+    const children = (profile?.family && ((profile.family as any).children ?? [])) as any[] ?? [];
+
+    const renderMember = (m: any) => {
+  const src = resolveAvatar(m as any);
+      return (
+        <TouchableOpacity key={m.id} onPress={() => openMember(m)} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }}>
+          {src ? <Image source={src} style={{ width: 48, height: 48, borderRadius: 8, marginRight: 12 }} /> : <View style={{ width: 48, height: 48, borderRadius: 8, backgroundColor: '#ddd', marginRight: 12 }} />}
+          <View>
+            <Text style={{ fontWeight: '700' }}>{`${m.firstName} ${m.lastName ?? ''}`}</Text>
+            <Text style={{ color: '#666' }}>{`${m.relation ? `${m.relation}` : ''} • Age ${m.age}`}</Text>
+          </View>
+        </TouchableOpacity>
+      );
+    };
+
+    return (
+      <View style={[styles.actionsRow, { marginTop: 12 }]}> 
+        <Text style={styles.sectionTitle}>Relationships</Text>
+
+        <View style={[styles.card, { marginTop: 8 }]}> 
+          <Text style={{ fontWeight: '700', marginBottom: 8 }}>Partner</Text>
+          {partner ? renderMember(partner) : <TouchableOpacity onPress={() => {
+            // quick action to add a random partner
+            const newPartner = {
+              id: `p-${Date.now()}`,
+              relation: 'partner',
+              avatar: Math.floor(Math.random() * characters.length),
+              gender: Math.random() < 0.5 ? 'female' : 'male',
+              firstName: FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)],
+              lastName: profile?.lastName ?? '',
+              age: Math.floor(Math.random() * 30) + 18,
+              alive: true,
+            } as any;
+            const p = useGameStore.getState();
+            p.setProfile({ ...(p.profile as any), partner: newPartner });
+          }}><Text style={{ color: '#2b8cff' }}>Add random partner</Text></TouchableOpacity>}
+        </View>
+
+        <View style={[styles.card, { marginTop: 8 }]}> 
+          <Text style={{ fontWeight: '700', marginBottom: 8 }}>Family</Text>
+          <Text style={{ fontWeight: '600', marginTop: 4 }}>Parents</Text>
+          {parents.length === 0 ? <Text style={{ color: '#666' }}>No parents found.</Text> : parents.map(renderMember)}
+          <Text style={{ fontWeight: '600', marginTop: 8 }}>Siblings</Text>
+          {siblings.length === 0 ? <Text style={{ color: '#666' }}>No siblings.</Text> : siblings.map(renderMember)}
+        </View>
+
+        <View style={[styles.card, { marginTop: 8 }]}> 
+          <Text style={{ fontWeight: '700', marginBottom: 8 }}>Children</Text>
+          {children.length === 0 && <Text style={{ color: '#666' }}>No children yet.</Text>}
+          {children.length > 0 && (
+            <>
+              {children.length >= 5 ? (
+                <>
+                  <TouchableOpacity onPress={() => setChildrenExpanded((v) => !v)} style={{ marginBottom: 8 }}>
+                    <Text style={{ color: '#2b8cff' }}>{childrenExpanded ? 'Collapse children' : `Show ${children.length} children`}</Text>
+                  </TouchableOpacity>
+                  {childrenExpanded && children.map(renderMember)}
+                </>
+              ) : (
+                children.map(renderMember)
+              )}
+            </>
+          )}
+        </View>
+
+        <View style={[styles.card, { marginTop: 8 }]}> 
+          <Text style={{ fontWeight: '700', marginBottom: 8 }}>Friends</Text>
+          <Text style={{ color: '#666' }}>Friends will appear here.</Text>
+        </View>
+
+        {/* Member detail modal */}
+        <Modal visible={modalVisible} animationType="slide" transparent>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)' }}>
+            <View style={{ width: '90%', backgroundColor: '#fff', borderRadius: 12, padding: 16 }}>
+              {selectedMember ? (
+                <>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    {selectedMember ? (
+                      <Image source={resolveAvatar(selectedMember)} style={{ width: 64, height: 64, borderRadius: 8, marginRight: 12 }} />
+                    ) : (
+                      <View style={{ width: 64, height: 64, borderRadius: 8, backgroundColor: '#ddd', marginRight: 12 }} />
+                    )}
+                    <View>
+                      <Text style={{ fontWeight: '800', fontSize: 18 }}>{`${selectedMember.firstName} ${selectedMember.lastName ?? ''}`}</Text>
+                      <Text style={{ color: '#666' }}>{`${selectedMember.relation} • Age ${selectedMember.age}`}</Text>
+                    </View>
+                  </View>
+                  <View style={{ height: 12 }} />
+                  <Button title="Build Relationship (+5 happiness)" onPress={() => {
+                    const st = useGameStore.getState();
+                    st.setProfile({ ...(st.profile as any), happiness: (st.happiness ?? 50) + 5 } as any);
+                    closeModal();
+                    st.addEvent(`Spent time with ${selectedMember.firstName}. Happiness +5.`);
+                  }} />
+                  <View style={{ height: 8 }} />
+                  <Button title="Add child to this member" onPress={() => {
+                    const st = useGameStore.getState();
+                    const child = {
+                      id: `c-${Date.now()}`,
+                      relation: 'child',
+                      avatar: Math.floor(Math.random() * characters.length),
+                      gender: Math.random() < 0.5 ? 'female' : 'male',
+                      firstName: FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)],
+                      lastName: st.profile?.lastName ?? '',
+                      age: 0,
+                      alive: true,
+                    } as any;
+                    const fam = st.profile?.family ?? { parents: [], siblings: [], children: [] };
+                    const nextFam = { ...fam, children: [...(fam.children ?? []), child] };
+                    st.setProfile({ ...(st.profile as any), family: nextFam });
+                    closeModal();
+                    st.addEvent(`A child was born: ${child.firstName} ${child.lastName}`);
+                  }} />
+                  <View style={{ height: 8 }} />
+                  <Button title="Remove member" color="crimson" onPress={() => {
+                    const st = useGameStore.getState();
+                    const prof = st.profile as any;
+                    const fam = prof.family ?? { parents: [], siblings: [], children: [] };
+                    const removeFrom = fam[`${selectedMember.relation}s`] ?? [];
+                    const nextArr = (removeFrom as any[]).filter((x) => x.id !== selectedMember.id);
+                    const nextFam = { ...fam, [`${selectedMember.relation}s`]: nextArr };
+                    st.setProfile({ ...prof, family: nextFam });
+                    closeModal();
+                    st.addEvent(`Removed ${selectedMember.firstName} from family.`);
+                  }} />
+                  <View style={{ height: 8 }} />
+                  <Button title="Close" onPress={closeModal} />
+                </>
+              ) : null}
+            </View>
+          </View>
+        </Modal>
+      </View>
+    );
+  };
+
   const BottomActionBar = () => (
     <View style={styles.bottomBar}>
       <View style={styles.navRow}>
-  <TouchableOpacity style={[styles.navItem, selectedNav === 'Home' && styles.navItemActive]} onPress={() => { navigation.navigate('Game'); setSelectedNav('Home'); }} accessibilityRole="button" accessibilityLabel="Home">
+  <TouchableOpacity style={[styles.navItem, selectedNav === 'Home' && styles.navItemActive]} onPress={() => { setSelectedNav('Home'); }} accessibilityRole="button" accessibilityLabel="Home">
           <MaterialCommunityIcons name="home-outline" size={22} color={selectedNav === 'Home' ? '#2ecc71' : '#fff'} />
           {!compact && <Text style={[styles.smallIconLabel, selectedNav === 'Home' && styles.smallIconLabelActive]}>Home</Text>}
         </TouchableOpacity>
 
-  <TouchableOpacity style={[styles.navItem, selectedNav === 'Career' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="Career" onPress={() => { setSelectedNav('Career'); navigation.navigate('Game'); }}>
+  <TouchableOpacity style={[styles.navItem, selectedNav === 'Career' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="Career" onPress={() => { setSelectedNav('Career'); }}>
           <MaterialCommunityIcons name="briefcase-outline" size={22} color={selectedNav === 'Career' ? '#2ecc71' : '#fff'} />
           {!compact && <Text style={[styles.smallIconLabel, selectedNav === 'Career' && styles.smallIconLabelActive]}>Career</Text>}
         </TouchableOpacity>
 
-  <TouchableOpacity style={[styles.navItem, selectedNav === 'Assets' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="Assets" onPress={() => { setSelectedNav('Assets'); navigation.navigate('Game'); }}>
+  <TouchableOpacity style={[styles.navItem, selectedNav === 'Assets' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="Assets" onPress={() => { setSelectedNav('Assets'); }}>
           <MaterialCommunityIcons name="wallet-outline" size={22} color={selectedNav === 'Assets' ? '#2ecc71' : '#fff'} />
           {!compact && <Text style={[styles.smallIconLabel, selectedNav === 'Assets' && styles.smallIconLabelActive]}>Assets</Text>}
         </TouchableOpacity>
 
-  <TouchableOpacity style={[styles.navItem, selectedNav === 'Skills' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="Skills" onPress={() => { setSelectedNav('Skills'); navigation.navigate('Game'); }}>
+  <TouchableOpacity style={[styles.navItem, selectedNav === 'Skills' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="Skills" onPress={() => { setSelectedNav('Skills'); }}>
           <MaterialCommunityIcons name="brain" size={22} color={selectedNav === 'Skills' ? '#2ecc71' : '#fff'} />
           {!compact && <Text style={[styles.smallIconLabel, selectedNav === 'Skills' && styles.smallIconLabelActive]}>Skills</Text>}
         </TouchableOpacity>
 
-  <TouchableOpacity style={[styles.navItem, selectedNav === 'Relationships' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="Relationships" onPress={() => { setSelectedNav('Relationships'); navigation.navigate('Game'); }}>
+  <TouchableOpacity style={[styles.navItem, selectedNav === 'Relationships' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="Relationships" onPress={() => { setSelectedNav('Relationships'); }}>
           <MaterialCommunityIcons name="account-heart-outline" size={22} color={selectedNav === 'Relationships' ? '#2ecc71' : '#fff'} />
           {!compact && <Text style={[styles.smallIconLabel, selectedNav === 'Relationships' && styles.smallIconLabelActive]}>Relationships</Text>}
         </TouchableOpacity>
 
-  <TouchableOpacity style={[styles.navItem, selectedNav === 'Activities' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="Activities" onPress={() => { setSelectedNav('Activities'); navigation.navigate('Game'); }}>
+  <TouchableOpacity style={[styles.navItem, selectedNav === 'Activities' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="Activities" onPress={() => { setSelectedNav('Activities'); navigation.navigate('Activities'); }}>
           <MaterialCommunityIcons name="flash-outline" size={22} color={selectedNav === 'Activities' ? '#2ecc71' : '#fff'} />
           {!compact && <Text style={[styles.smallIconLabel, selectedNav === 'Activities' && styles.smallIconLabelActive]}>Activities</Text>}
         </TouchableOpacity>
 
-  <TouchableOpacity style={[styles.navItem, selectedNav === 'More' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="More" onPress={() => { setSelectedNav('More'); navigation.navigate('Game'); }}>
+  <TouchableOpacity style={[styles.navItem, selectedNav === 'More' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="More" onPress={() => { setSelectedNav('More'); }}>
           <MaterialCommunityIcons name="dots-vertical" size={22} color={selectedNav === 'More' ? '#2ecc71' : '#fff'} />
         </TouchableOpacity>
       </View>
@@ -205,29 +392,7 @@ export default function GameScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.statusBar}>
-        <View style={styles.statusLeft}>
-          {avatarSource ? (
-            <Image source={avatarSource} style={styles.statusAvatar} />
-          ) : (
-            <View style={styles.statusAvatarPlaceholder} />
-          )}
-          <View style={styles.statusTextWrap}>
-            <View style={styles.nameRow}>
-              <Text style={styles.statusName}>{profile ? `${profile.firstName} ${profile.lastName}` : 'Your Sim'}</Text>
-            </View>
-            <Text style={styles.statusMeta}>Age {age} • {profile ? countryCodeToFlag(profile.country) : ''}</Text>
-          </View>
-        </View>
-
-        <View style={styles.statusRight}>
-          <View style={styles.gameStat}><Text style={styles.gameStatIcon}>❤️</Text><Text style={styles.gameStatText}>85%</Text></View>
-          <View style={styles.gameStat}><Text style={styles.gameStatIcon}>⚡</Text><Text style={styles.gameStatText}>80%</Text></View>
-          <View style={styles.gameStat}><Text style={styles.gameStatIcon}>😊</Text><Text style={styles.gameStatText}>High</Text></View>
-        </View>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+  <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: computedPaddingBottom }]}>
         <View style={styles.banner}>
           <LinearGradient colors={["#f7fbff", "#e6f0fb"]} style={styles.bannerBackground} />
           {avatarSource ? (
@@ -241,52 +406,70 @@ export default function GameScreen({ route, navigation }: Props) {
         </View>
 
         {/* Advance Year pill placed below the banner and above the actions */}
-        <View style={{ alignItems: 'center', marginTop: 12, marginBottom: 8 + insets.bottom }}>
+        <View style={{ alignItems: 'center', marginTop: 12, marginBottom: 8 + insets.bottom, flexDirection: 'row', justifyContent: 'center', gap: 12 }}>
           <TouchableOpacity style={styles.advancePillInline} onPress={advanceYear} accessibilityRole="button" accessibilityLabel="Advance year">
             <MaterialCommunityIcons name="calendar-arrow-right" size={18} color="#fff" style={{ marginRight: 8 }} />
             <Text style={styles.advanceLabel}>Advance Year</Text>
           </TouchableOpacity>
-        </View>
 
-        <View style={styles.actionsRow}>
-          <Text style={styles.sectionTitle}>What's Next? Action Bar</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingLeft: 12, paddingRight: 20, marginTop: 8 }}
-          >
-            {suggestions.map((s) => (
-              <ActionCard key={s.id} icon={s.icon} title={s.title} desc={s.desc} primary={s.primary} secondary={s.secondary} onPrimary={s.onPrimary} onSecondary={s.onSecondary} />
-            ))}
-          </ScrollView>
-          <TouchableOpacity style={{ position: 'absolute', right: 12, top: -6 }} onPress={() => setSuggestSeed((v) => v + 1)}>
-            <Text style={{ color: '#6b7280' }}>Shuffle</Text>
+          <TouchableOpacity style={[styles.advancePillInline, { backgroundColor: '#2b8cff' }]} onPress={() => navigation.navigate('Education')} accessibilityRole="button" accessibilityLabel="Education">
+            <MaterialCommunityIcons name="school" size={18} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.advanceLabel}>Education</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.logSection}>
-          <Text style={styles.sectionTitle}>Log</Text>
-          {/* compute a responsive height so the log fills ~55% of the screen */}
-          {(() => {
-            const { height: windowHeight } = useWindowDimensions();
-            const cardHeight = Math.round(windowHeight * 0.55);
-            // inner EventLog should be slightly smaller than the card to allow for padding/header
-            const innerMax = Math.max(120, cardHeight - 40);
-            return (
-              <View style={[styles.logCard, { height: cardHeight }]}> 
-                <EventLog maxHeight={innerMax} />
-              </View>
-            );
-          })()}
-        </View>
+        {selectedNav === 'Relationships' ? (
+          <RelationshipsPanel />
+        ) : (
+          <>
+            <View style={styles.actionsRow}>
+              <Text style={styles.sectionTitle}>What's Next? Action Bar</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingLeft: 12, paddingRight: 20, marginTop: 8 }}
+              >
+                {suggestions.map((s) => (
+                  <ActionCard key={s.id} icon={s.icon} title={s.title} desc={s.desc} primary={s.primary} secondary={s.secondary} onPrimary={s.onPrimary} onSecondary={s.onSecondary} />
+                ))}
+              </ScrollView>
+              <TouchableOpacity style={{ position: 'absolute', right: 12, top: -6 }} onPress={() => setSuggestSeed((v) => v + 1)}>
+                <Text style={{ color: '#6b7280' }}>Shuffle</Text>
+              </TouchableOpacity>
+            </View>
 
-        <View style={{ height: 120 }} />
+            <View style={styles.logSection}>
+              <Text style={styles.sectionTitle}>Log</Text>
+              {/* compute a responsive height so the log fills ~55% of the screen */}
+              {(() => {
+                const cardHeight = Math.round(windowHeight * 0.55);
+                // inner EventLog should be slightly smaller than the card to allow for padding/header
+                const innerMax = Math.max(120, cardHeight - 40);
+                return (
+                  <View style={[styles.logCard, { height: cardHeight }]}> 
+                    <EventLog maxHeight={innerMax} />
+                  </View>
+                );
+              })()}
+            </View>
+          </>
+        )}
+
+  {/* spacer removed; paddingBottom handles safe spacing above the bottom nav */}
       </ScrollView>
 
-      <View style={[
-        styles.statsCard,
-        statsExpanded ? styles.statsCardExpanded : [styles.statsCardCollapsed, styles.statsCardCollapsedExtraPad],
-      ]}>
+        <View
+          onLayout={(e) => {
+            const h = e.nativeEvent.layout.height;
+            if (h && h !== statsHeight) setStatsHeight(h);
+          }}
+          style={[
+            styles.statsCard,
+            statsExpanded ? styles.statsCardExpanded : [styles.statsCardCollapsed, styles.statsCardCollapsedExtraPad],
+            // position the stats card just above the app bottom nav using the measured navHeight
+            { bottom: statsBottomOffset },
+          ]}
+        >
         <View style={styles.statsHeaderRow}>
           <Text style={styles.statsHeaderTitle}>Stats</Text>
           <TouchableOpacity onPress={() => setStatsExpanded((s) => !s)} style={styles.statsToggle}>
@@ -295,29 +478,29 @@ export default function GameScreen({ route, navigation }: Props) {
         </View>
         {statsExpanded ? (
           <>
-            <StatBar label="Happiness" value={62} color="#f6c85f" />
-            <StatBar label="Health" value={86} color="#ff6b6b" />
-            <StatBar label="Smarts" value={98} color="#6be3ff" />
-            <StatBar label="Looks" value={100} color="#ff8a65" />
+            <StatBar label="Happiness" value={happiness ?? 0} color="#f6c85f" />
+            <StatBar label="Health" value={health ?? 0} color="#ff6b6b" />
+            <StatBar label="Smarts" value={smarts ?? 0} color="#6be3ff" />
+            <StatBar label="Looks" value={looks ?? 0} color="#ff8a65" />
             <StatBar label="Fame" value={92} color="#ffcc00" />
           </>
         ) : (
           <View style={styles.statsCompactRow}>
             <View style={styles.statsCompactItem}>
               <Text style={styles.statsCompactLabel}>Happiness</Text>
-              <Text style={styles.statsCompactValue}>62%</Text>
+              <Text style={styles.statsCompactValue}>{happiness ?? 0}%</Text>
             </View>
             <View style={styles.statsCompactItem}>
               <Text style={styles.statsCompactLabel}>Health</Text>
-              <Text style={styles.statsCompactValue}>86%</Text>
+              <Text style={styles.statsCompactValue}>{health ?? 0}%</Text>
             </View>
             <View style={styles.statsCompactItem}>
               <Text style={styles.statsCompactLabel}>Smarts</Text>
-              <Text style={styles.statsCompactValue}>98%</Text>
+              <Text style={styles.statsCompactValue}>{smarts ?? 0}%</Text>
             </View>
             <View style={styles.statsCompactItem}>
               <Text style={styles.statsCompactLabel}>Looks</Text>
-              <Text style={styles.statsCompactValue}>100%</Text>
+              <Text style={styles.statsCompactValue}>{looks ?? 0}%</Text>
             </View>
             <View style={styles.statsCompactItem}>
               <Text style={styles.statsCompactLabel}>Fame</Text>
@@ -325,9 +508,8 @@ export default function GameScreen({ route, navigation }: Props) {
             </View>
           </View>
         )}
-      </View>
-
-      <BottomActionBar />
+  </View>
+      {/* debug overlay removed */}
     </View>
   );
 }
@@ -350,7 +532,7 @@ const styles = StyleSheet.create({
   gameStatIcon: { color: '#fff', marginRight: 6 },
   gameStatText: { color: '#fff', fontWeight: '700' },
 
-  scrollContent: { padding: 12, paddingBottom: 140 },
+  scrollContent: { padding: 12, paddingBottom: 12 },
   banner: { height: 150, backgroundColor: '#e6eef6', borderRadius: 12, overflow: 'hidden', justifyContent: 'center' },
   bannerBackground: { ...StyleSheet.absoluteFillObject },
   bannerImage: { width: '120%', height: '120%', position: 'absolute', right: -30, bottom: -10 },
@@ -389,7 +571,7 @@ const styles = StyleSheet.create({
   logSection: { marginTop: 14 },
   logCard: { marginTop: 8, backgroundColor: '#fff', borderRadius: 10, padding: 10, minHeight: 120, maxHeight: 620, overflow: 'hidden' },
 
-  statsCard: { position: 'absolute', left: 12, right: 12, bottom: 70, backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 12, padding: 12 },
+  statsCard: { position: 'absolute', left: 12, right: 12, bottom: 12, backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 12, padding: 12, zIndex: 100, elevation: 10 },
   statsCardExpanded: { paddingBottom: 16 },
   statsCardCollapsed: { paddingVertical: 8 },
   statsHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },

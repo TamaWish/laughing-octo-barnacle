@@ -32,7 +32,10 @@ Goals for the roadmap:
 8. Optional: achievements, save-slots, seedable RNG, polish/animations, analytics.
 9. If you'd like the profile to be editable from the Game screen or persisted as the player's saved slot, I can add UI and store actions for that.
 10. If you want strong runtime validation, I can add a small schema (zod) and validate before persisting.
-
+11. Implement course-specific post-completion side effects (e.g., unlocking career paths, adding license items.
+12. Convert fractional remaining years into an exact month/day estimate for graduation.
+13. Add a small "View progress" detail screen showing semester-by-semester progress and tuition paid.
+14. Use the new completedCertificates to implement unlocks (e.g., transfer from A.A. to B.A., or blocked paths removal when certificate is converted).
 
 ## Implementation log — persistence added
 

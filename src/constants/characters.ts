@@ -1,63 +1,91 @@
 // Auto-generated list of character images so we can reference them statically for Metro bundler
-export const characters = [
-  require('../../assets/Character/1.png'),
-  require('../../assets/Character/2.png'),
-  require('../../assets/Character/3.png'),
-  require('../../assets/Character/4.png'),
-  require('../../assets/Character/5.png'),
-  require('../../assets/Character/6.png'),
-  require('../../assets/Character/7.png'),
-  require('../../assets/Character/8.png'),
-  require('../../assets/Character/9.png'),
-  require('../../assets/Character/10.png'),
-  require('../../assets/Character/11.png'),
-  require('../../assets/Character/12.png'),
-  require('../../assets/Character/13.png'),
-  require('../../assets/Character/14.png'),
-  require('../../assets/Character/15.png'),
-  require('../../assets/Character/16.png'),
-  require('../../assets/Character/17.png'),
-  require('../../assets/Character/18.png'),
-  require('../../assets/Character/19.png'),
-  require('../../assets/Character/20.png'),
-  require('../../assets/Character/21.png'),
-  require('../../assets/Character/22.png'),
-  require('../../assets/Character/23.png'),
-  require('../../assets/Character/24.png'),
-  require('../../assets/Character/25.png'),
-  require('../../assets/Character/26.png'),
-  require('../../assets/Character/27.png'),
-  require('../../assets/Character/28.png'),
-  require('../../assets/Character/29.png'),
-  require('../../assets/Character/30.png'),
-  require('../../assets/Character/31.png'),
-  require('../../assets/Character/32.png'),
-  require('../../assets/Character/33.png'),
-  require('../../assets/Character/34.png'),
-  require('../../assets/Character/35.png'),
-  require('../../assets/Character/36.png'),
-  require('../../assets/Character/37.png'),
-  require('../../assets/Character/38.png'),
-  require('../../assets/Character/39.png'),
-  require('../../assets/Character/40.png'),
-  require('../../assets/Character/41.png'),
-  require('../../assets/Character/42.png'),
-  require('../../assets/Character/43.png'),
-  require('../../assets/Character/44.png'),
-  require('../../assets/Character/45.png'),
-  require('../../assets/Character/46.png'),
-  require('../../assets/Character/47.png'),
-  require('../../assets/Character/48.png'),
-  require('../../assets/Character/49.png'),
-  require('../../assets/Character/50.png'),
-  require('../../assets/Character/51.png'),
-  require('../../assets/Character/52.png'),
-  require('../../assets/Character/53.png'),
-  require('../../assets/Character/54.png'),
-  require('../../assets/Character/55.png'),
-  require('../../assets/Character/56.png'),
-  require('../../assets/Character/57.png'),
-  require('../../assets/Character/58.png'),
-  require('../../assets/Character/59.png'),
-  require('../../assets/Character/60.png'),
+// Gender-aware character image lists
+// We keep a backwards-compatible `characters` array (male then female) for numeric indices,
+// but also expose helper functions to resolve an avatar by gender so the correct M#/F# image
+// is shown for a profile.
+
+export const maleCharacters = [
+  require('../../assets/Character/M1.png'),
+  require('../../assets/Character/M2.png'),
+  require('../../assets/Character/M3.png'),
+  require('../../assets/Character/M4.png'),
+  require('../../assets/Character/M5.png'),
+  require('../../assets/Character/M6.png'),
+  require('../../assets/Character/M7.png'),
+  require('../../assets/Character/M8.png'),
+  require('../../assets/Character/M9.png'),
+  require('../../assets/Character/M10.png'),
+  require('../../assets/Character/M11.png'),
+  require('../../assets/Character/M12.png'),
+  require('../../assets/Character/M13.png'),
+  require('../../assets/Character/M14.png'),
+  require('../../assets/Character/M15.png'),
+  require('../../assets/Character/M16.png'),
+  require('../../assets/Character/M17.png'),
+  require('../../assets/Character/M18.png'),
+  require('../../assets/Character/M19.png'),
+  require('../../assets/Character/M20.png'),
+  require('../../assets/Character/M22.png'),
+  require('../../assets/Character/M23.png'),
+  require('../../assets/Character/M24.png'),
+  require('../../assets/Character/M25.png'),
+  require('../../assets/Character/M26.png'),
+  require('../../assets/Character/M27.png'),
+  require('../../assets/Character/M28.png'),
+  require('../../assets/Character/M29.png'),
+  require('../../assets/Character/M30.png'),
 ];
+
+export const femaleCharacters = [
+  require('../../assets/Character/F1.png'),
+  require('../../assets/Character/F10.png'),
+  require('../../assets/Character/F11.png'),
+  require('../../assets/Character/F12.png'),
+  require('../../assets/Character/F13.png'),
+  require('../../assets/Character/F14.png'),
+  require('../../assets/Character/F15.png'),
+  require('../../assets/Character/F16.png'),
+  require('../../assets/Character/F17.png'),
+  require('../../assets/Character/F18.png'),
+  require('../../assets/Character/F19.png'),
+  require('../../assets/Character/F2.png'),
+  require('../../assets/Character/F20.png'),
+  require('../../assets/Character/F21.png'),
+  require('../../assets/Character/F22.png'),
+  require('../../assets/Character/F23.png'),
+  require('../../assets/Character/F24.png'),
+  require('../../assets/Character/F25.png'),
+  require('../../assets/Character/F26.png'),
+  require('../../assets/Character/F27.png'),
+  require('../../assets/Character/F28.png'),
+  require('../../assets/Character/F29.png'),
+  require('../../assets/Character/F3.png'),
+  require('../../assets/Character/F30.png'),
+  require('../../assets/Character/F4.png'),
+  require('../../assets/Character/F6.png'),
+  require('../../assets/Character/F7.png'),
+  require('../../assets/Character/F8.png'),
+  require('../../assets/Character/F9.png'),
+];
+
+// Backwards-compatible flat array: male then female (keeps numeric indices stable)
+export const characters = [...maleCharacters, ...femaleCharacters];
+
+export type Gender = 'male' | 'female' | 'other';
+
+// Return an image source for a requested gender and index. Index is wrapped with modulo
+// so old numeric avatar values still map to a valid image.
+export function getCharacter(gender: Gender | undefined, index: number | undefined) {
+  const idx = typeof index === 'number' && !isNaN(index) ? Math.max(0, index) : 0;
+  if (gender === 'male') return maleCharacters[idx % maleCharacters.length];
+  if (gender === 'female') return femaleCharacters[idx % femaleCharacters.length];
+  return characters[idx % characters.length];
+}
+
+// Accepts a profile-like object { avatar: number, gender: 'male'|'female'|... }
+// and returns the resolved image source. This is the convenience function to use when
+// rendering avatars for people so the selected gender's image set is used.
+export function resolveAvatar(obj: { avatar?: number; gender?: Gender } | undefined) {
+  if (!obj) return characters[0];
+  return getCharacter(obj.gender, obj.avatar ?? 0);
+}

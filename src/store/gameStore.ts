@@ -22,6 +22,7 @@ type GameState = {
   happiness: number;
   smarts: number;
   looks: number;
+  fame: number;
   gameDate: string;
   eventLog: string[];
   profile?: Profile;
@@ -81,6 +82,7 @@ const useGameStore = create<GameState>()(
       happiness: 62,
       smarts: 98,
       looks: 100,
+      fame: 0,
       eventLog: [],
   completedSuggestions: [],
       profile: undefined,

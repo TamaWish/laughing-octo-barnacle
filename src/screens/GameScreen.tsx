@@ -21,6 +21,8 @@ import useGameStore from '../store/gameStore';
 import Toast from 'react-native-toast-message';
 import EventLog from '../components/EventLog';
 import RelationshipsPanel from '../components/RelationshipsPanel';
+import StatBar from '../components/StatBar';
+import ActionCard from '../components/ActionCard';
 import { Profile } from '../types/profile';
 import { characters, resolveAvatar } from '../constants/characters';
 
@@ -53,6 +55,7 @@ export default function GameScreen({ route, navigation }: Props) {
   const health = useGameStore((s) => s.health);
   const smarts = useGameStore((s) => s.smarts);
   const looks = useGameStore((s) => s.looks);
+  const fame = useGameStore((s) => s.fame);
   const { width, height: windowHeight } = useWindowDimensions();
   const compact = width < 380;
   // local selected nav item (used for active-state highlighting)
@@ -170,35 +173,6 @@ export default function GameScreen({ route, navigation }: Props) {
 
     return materialized.filter((s) => !completed.includes(s.id));
   }, [age, money, suggestSeed, completed, disabledIds]);
-
-  // Small presentational components
-  const StatBar = ({ label, value, color }: { label: string; value: number; color?: string }) => (
-    <View style={styles.statBarRow}>
-      <Text style={styles.statBarLabel}>{label}</Text>
-      <View style={styles.statBarTrack}>
-        <View style={[styles.statBarFill, { width: `${Math.min(100, Math.max(0, value))}%`, backgroundColor: color ?? '#3bc14a' }]} />
-      </View>
-      <Text style={styles.statBarValue}>{value}%</Text>
-    </View>
-  );
-
-  const ActionCard = ({ icon, title, desc, primary, secondary, onPrimary, onSecondary }: { icon?: string; title: string; desc: string; primary: string; secondary?: string; onPrimary?: () => void; onSecondary?: () => void }) => (
-    <View style={[styles.card, styles.cardPeek]}>
-      {icon ? <View style={styles.cardIconWrap}><Text style={styles.cardIcon}>{icon}</Text></View> : null}
-      <Text style={styles.cardTitle}>{title}</Text>
-      <Text style={styles.cardDesc}>{desc}</Text>
-      <View style={styles.cardButtons}>
-        <TouchableOpacity style={styles.cardPrimary} onPress={() => onPrimary && onPrimary()}>
-          <Text style={styles.cardPrimaryText}>{primary}</Text>
-        </TouchableOpacity>
-        {secondary ? (
-          <TouchableOpacity style={styles.cardSecondaryLink} onPress={() => onSecondary && onSecondary()}>
-            <Text style={styles.cardSecondaryLinkText}>{secondary}</Text>
-          </TouchableOpacity>
-        ) : null}
-      </View>
-    </View>
-  );
 
   const BottomActionBar = () => (
     <View style={styles.bottomBar}>
@@ -332,7 +306,7 @@ export default function GameScreen({ route, navigation }: Props) {
             <StatBar label="Health" value={health ?? 0} color="#ff6b6b" />
             <StatBar label="Smarts" value={smarts ?? 0} color="#6be3ff" />
             <StatBar label="Looks" value={looks ?? 0} color="#ff8a65" />
-            <StatBar label="Fame" value={92} color="#ffcc00" />
+            <StatBar label="Fame" value={fame ?? 0} color="#ffcc00" />
           </>
         ) : (
           <View style={styles.statsCompactRow}>
@@ -354,7 +328,7 @@ export default function GameScreen({ route, navigation }: Props) {
             </View>
             <View style={styles.statsCompactItem}>
               <Text style={styles.statsCompactLabel}>Fame</Text>
-              <Text style={styles.statsCompactValue}>92%</Text>
+              <Text style={styles.statsCompactValue}>{fame ?? 0}%</Text>
             </View>
           </View>
         )}
@@ -400,21 +374,6 @@ const styles = StyleSheet.create({
 
   actionsRow: { marginTop: 12 },
   sectionTitle: { fontWeight: '700' },
-  card: { width: 220, backgroundColor: '#fff', padding: 12, borderRadius: 10, marginRight: 12, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
-  // make card slightly wider and show shadow so next card peeks
-  cardPeek: { width: 240 },
-  cardIconWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#eef6ff', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  cardIcon: { fontSize: 20 },
-  cardTitle: { fontWeight: '700', marginBottom: 6 },
-  cardDesc: { color: '#666', fontSize: 13, marginBottom: 8 },
-  cardButtons: { flexDirection: 'row', marginTop: 6 },
-  cardPrimary: { backgroundColor: '#2b8cff', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8 },
-  cardPrimaryText: { color: '#fff', fontWeight: '700' },
-  cardSecondary: { marginLeft: 8, borderWidth: 1, borderColor: '#ddd', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8 },
-  cardSecondaryText: { color: '#333' },
-  cardSecondaryLink: { marginLeft: 12, alignSelf: 'center' },
-  cardSecondaryLinkText: { color: '#6b7280', textDecorationLine: 'underline' },
-  cardDisabled: { opacity: 0.6 },
   toast: { position: 'absolute', left: '50%', transform: [{ translateX: -100 }], bottom: 160, backgroundColor: 'rgba(0,0,0,0.8)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
   toastText: { color: '#fff' },
 
@@ -434,11 +393,6 @@ const styles = StyleSheet.create({
   statsCompactValue: { fontWeight: '800', fontSize: 18, marginTop: 4, textAlign: 'center' },
   // give extra bottom padding so the big age button doesn't overlap collapsed values
   statsCardCollapsedExtraPad: { paddingBottom: 36 },
-  statBarRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  statBarLabel: { width: 80, color: '#333' },
-  statBarTrack: { flex: 1, height: 10, backgroundColor: '#e6eef6', borderRadius: 6, marginHorizontal: 8, overflow: 'hidden' },
-  statBarFill: { height: 10, borderRadius: 6 },
-  statBarValue: { width: 36, textAlign: 'right' },
 
   bottomBar: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 86, backgroundColor: '#12323e', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12 },
   bottomLeftIcons: { flexDirection: 'row', alignItems: 'center' },

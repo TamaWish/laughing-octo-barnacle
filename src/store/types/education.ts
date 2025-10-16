@@ -35,4 +35,4 @@ export interface Enrollment {
   logicalConstraint?: any;
 }
 
-export type CourseCategory = 'cc' | 'uni' | 'grad' | 'bus' | 'voc' | 'online';
+export type CourseCategory = 'preschool' | 'primary' | 'secondary' | 'cc' | 'uni' | 'grad' | 'bus' | 'voc' | 'online';

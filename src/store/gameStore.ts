@@ -4,6 +4,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 
 import { Profile } from '../types/profile';
 import { Course, Enrollment } from './types/education';
+import { COUNTRY_EDUCATION_MAP } from './educationCatalog';
 import { TabKey } from '../navigation';
 import Toast from 'react-native-toast-message';
 
@@ -111,6 +112,30 @@ const useGameStore = create<GameState>()(
                 happiness: clamp((s.happiness ?? 50) + happyDelta),
               };
             });
+            // auto-enroll in kindergarten at age 3 if not already enrolled
+            if (newAge === 3 && !get().isCurrentlyEnrolled && get().profile?.country) {
+              const countryCode = get().profile!.country;
+              const catalog = COUNTRY_EDUCATION_MAP[countryCode];
+              if (catalog && catalog.courses.preschool) {
+                const publicPreschool = catalog.courses.preschool.find(c => c.cost === 0);
+                if (publicPreschool) {
+                  get().enrollCourse(publicPreschool);
+                  get().addEvent(`Auto-enrolled in ${publicPreschool.name} at age 3.`);
+                }
+              }
+            }
+            // auto-enroll in primary school at the country's start age if educationStatus == 0 and not enrolled
+            if (get().educationStatus === 0 && !get().isCurrentlyEnrolled && get().profile?.country) {
+              const countryCode = get().profile!.country;
+              const catalog = COUNTRY_EDUCATION_MAP[countryCode];
+              if (catalog && catalog.courses.primary) {
+                const primaryCourse = catalog.courses.primary[0];
+                if (primaryCourse && newAge === primaryCourse.requiredAge) {
+                  get().enrollCourse(primaryCourse);
+                  get().addEvent(`Auto-enrolled in ${primaryCourse.name} at age ${newAge}.`);
+                }
+              }
+            }
             // show toast with stat deltas
             const next = get();
             const deltas = [] as string[];
@@ -130,6 +155,15 @@ const useGameStore = create<GameState>()(
                 const newTime = prevTime - 1;
                 set((s) => ({ currentEnrollment: s.currentEnrollment ? { ...s.currentEnrollment, timeRemaining: newTime } : s.currentEnrollment }));
                 get().addEvent(`${after.currentEnrollment.name} progressed by 1 year. ${Math.max(0, newTime)} years remaining.`);
+                // add stat boosts if enrolled in primary or secondary
+                if (after.currentEnrollment.id?.includes('primary') || after.currentEnrollment.id?.includes('secondary')) {
+                  const clamp = (v: number) => Math.max(0, Math.min(100, v));
+                  set((s) => ({
+                    smarts: clamp((s.smarts ?? 50) + 2),
+                    happiness: clamp((s.happiness ?? 50) + 1),
+                  }));
+                  get().addEvent(`Gained +2 Smarts and +1 Happiness from schooling.`);
+                }
                 if (newTime <= 0) {
                   // capture completed enrollment (use the copy from get())
                   const completed = get().currentEnrollment;
@@ -157,8 +191,8 @@ const useGameStore = create<GameState>()(
       state.addEvent('Enrollment failed: already enrolled in another program.');
       return;
     }
-    // Constraint 2: age
-    if (course.requiredAge && state.age < course.requiredAge) {
+    // Constraint 2: age (strict numeric check)
+    if (typeof course.requiredAge === 'number' && state.age < course.requiredAge) {
       Toast.show({ type: 'error', text1: 'Enrollment failed', text2: `Must be at least ${course.requiredAge} to enroll.` });
       state.addEvent(`Enrollment failed: too young for ${course.name}.`);
       return;
@@ -262,15 +296,44 @@ const useGameStore = create<GameState>()(
     if (!completedCourse) return;
     // Add degree/name to completedDegrees and update status
     set((s) => ({ completedDegrees: Array.from(new Set([...(s.completedDegrees || []), completedCourse.name])), completedCertificates: Array.from(new Set([...(s.completedCertificates || []), completedCourse.id])) }));
-    // Determine status to grant: prefer explicit grantsStatus, otherwise attempt to infer
-    const grant = completedCourse.grantsStatus ?? (completedCourse.name?.toLowerCase()?.includes('associate') ? 4 : completedCourse.name?.toLowerCase()?.includes('b.a') || completedCourse.name?.toLowerCase()?.includes('b.s') || completedCourse.name?.toLowerCase()?.includes('bachelor') ? 5 : completedCourse.name?.toLowerCase()?.includes('master') || completedCourse.name?.toLowerCase()?.includes('m.d') || completedCourse.name?.toLowerCase()?.includes('j.d') || completedCourse.name?.toLowerCase()?.includes('ph.d') ? 6 : completedCourse.name?.toLowerCase()?.includes('certificate') ? 3 : null);
-    if (typeof grant === 'number') {
-      set(() => ({ educationStatus: Math.max(get().educationStatus, grant) }));
-      get().addEvent(`Education status updated to ${grant} after completing ${completedCourse.name}.`);
+    // Special handling for preschool completion: boost stats instead of status
+    const isPreschool = completedCourse.id?.includes('-preschool-');
+    if (isPreschool) {
+      const isPrivate = completedCourse.cost > 0;
+      const smartsBoost = isPrivate ? 20 : 10;
+      const happinessBoost = isPrivate ? 25 : 15;
+      const clamp = (v: number) => Math.max(0, Math.min(100, v));
+      set((s) => ({
+        smarts: clamp((s.smarts ?? 50) + smartsBoost),
+        happiness: clamp((s.happiness ?? 50) + happinessBoost),
+      }));
+      get().addEvent(`Completed ${completedCourse.name}. Smarts +${smartsBoost}, Happiness +${happinessBoost}.`);
+      Toast.show({ type: 'success', text1: 'Graduation', text2: `Completed ${completedCourse.name}! Smarts +${smartsBoost}, Happiness +${happinessBoost}.`, position: 'bottom' });
+    } else {
+      // Determine status to grant: prefer explicit grantsStatus, otherwise attempt to infer
+      const grant = completedCourse.grantsStatus ?? (completedCourse.name?.toLowerCase()?.includes('associate') ? 4 : completedCourse.name?.toLowerCase()?.includes('b.a') || completedCourse.name?.toLowerCase()?.includes('b.s') || completedCourse.name?.toLowerCase()?.includes('bachelor') ? 5 : completedCourse.name?.toLowerCase()?.includes('master') || completedCourse.name?.toLowerCase()?.includes('m.d') || completedCourse.name?.toLowerCase()?.includes('j.d') || completedCourse.name?.toLowerCase()?.includes('ph.d') ? 6 : completedCourse.name?.toLowerCase()?.includes('certificate') ? 3 : null);
+      if (typeof grant === 'number') {
+        set(() => ({ educationStatus: Math.max(get().educationStatus, grant) }));
+        get().addEvent(`Education status updated to ${grant} after completing ${completedCourse.name}.`);
+      }
+      Toast.show({ type: 'success', text1: 'Graduation', text2: `Completed ${completedCourse.name}!` });
+    }
+    // auto-enroll in secondary if just completed primary
+    if (completedCourse.id?.includes('primary')) {
+      const countryCode = get().profile?.country;
+      if (countryCode) {
+        const catalog = COUNTRY_EDUCATION_MAP[countryCode];
+        if (catalog && catalog.courses.secondary) {
+          const secondaryCourse = catalog.courses.secondary[0];
+          if (secondaryCourse && get().age === secondaryCourse.requiredAge) {
+            get().enrollCourse(secondaryCourse);
+            get().addEvent(`Auto-enrolled in ${secondaryCourse.name} after completing primary.`);
+          }
+        }
+      }
     }
     // clear enrollment
     set(() => ({ isCurrentlyEnrolled: false, currentEnrollment: null }));
-    Toast.show({ type: 'success', text1: 'Graduation', text2: `Completed ${completedCourse.name}!` });
     const cb4 = (get() as any).autosaveCallback;
     if (cb4) cb4();
   },

@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensio
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation';
 import useGameStore from '../store/gameStore';
-import { CATEGORY_META, EDUCATION_CATALOG } from '../store/educationCatalog';
+// Import the new country map and helper function
+import { getEducationCatalog, getCountryMeta } from '../store/educationCatalog';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Education'>;
 
@@ -13,7 +14,11 @@ export default function EducationScreen({ navigation, route }: Props) {
   const compact = width < 380;
   // AppShell provides the header/profile/settings/load UI and autosave; EducationScreen now focuses on content only.
 
-  const options = CATEGORY_META;
+  // --- NEW LOGIC: Select the appropriate catalog based on country ---
+  const countryCode = profile?.country || 'US';
+  const { categories, courses, config } = getEducationCatalog(countryCode);
+  const countryMeta = getCountryMeta(countryCode);
+  const options = categories; // Use the country-specific categories
   const expandedActivities = useGameStore((s) => s.expandedActivities);
   const setExpandedActivity = useGameStore((s) => s.setExpandedActivity);
   const enrollCourse = useGameStore((s) => s.enrollCourse);
@@ -23,7 +28,14 @@ export default function EducationScreen({ navigation, route }: Props) {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>Education</Text>
+    <Text style={styles.title}>{config?.highSchoolName ? `Education in ${countryCode}` : 'Education'}</Text>
+    {config?.highSchoolName && (
+      <View style={styles.countryBadge}>
+        <Text style={styles.countryBadgeText}>
+          {countryMeta.flag}  {countryMeta.name} — {config.highSchoolName} → {config.universityDuration}-yr Univ
+        </Text>
+      </View>
+    )}
 
         <View style={styles.cardList}>
           {options.map((o) => (
@@ -36,12 +48,17 @@ export default function EducationScreen({ navigation, route }: Props) {
                 <Text style={styles.cardDesc}>{o.desc}</Text>
                 {expandedActivities?.[o.id] ? (
                   <View style={{ marginTop: 10 }}>
-                    {(EDUCATION_CATALOG as any)[o.id]?.map((course: any) => (
+                    {/* Use the country-specific courses map */}
+                    {courses[o.id]?.map((course: any) => (
                       <View key={course.id} style={styles.courseRow}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.courseName}>{course.name} <Text style={styles.courseType}>[{course.type}]</Text></Text>
                           <Text style={styles.courseDesc}>{course.description}</Text>
-                          <Text style={styles.courseMeta}>Duration: {course.duration} yr • Cost: ${course.cost} • Requires: {course.requiredStatus ?? 'None'}</Text>
+                          <Text style={styles.courseMeta}>
+                            Duration: {course.duration} yr • Cost: ${course.cost}
+                            {course.requiredExam ? ` • Exam: ${course.requiredExam}` : ''}
+                            {course.requiredStatus ? ` • Status: ${course.requiredStatus}` : ''}
+                          </Text>
                         </View>
                         <TouchableOpacity style={styles.enrollButton} onPress={() => { setSelectedCourse(course); setConfirmVisible(true); }}>
                           <Text style={styles.enrollText}>Enroll</Text>
@@ -106,6 +123,8 @@ const styles = StyleSheet.create({
 
   scrollContent: { padding: 12, paddingBottom: 140 },
   title: { fontSize: 22, fontWeight: '800', marginBottom: 12 },
+  countryBadge: { backgroundColor: '#e6f0ff', padding: 8, borderRadius: 8, marginBottom: 16, alignSelf: 'flex-start' },
+  countryBadgeText: { color: '#2b8cff', fontWeight: '600', fontSize: 14 },
   cardList: { },
   card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 12, borderRadius: 10, marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.03, elevation: 2 },
   cardLeft: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#eef6ff', alignItems: 'center', justifyContent: 'center', marginRight: 12 },

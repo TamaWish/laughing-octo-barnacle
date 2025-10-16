@@ -22,20 +22,13 @@ Goals for the roadmap:
 
 ## Prioritized improvements (short list)
 
-1. Fix LoadingScreen percent display (avoid reading private Animated internals).
-2. Persist game state (use AsyncStorage + `zustand` persist middleware).
-3. Add a scrollable event log and wire it into `GameScreen` (the central white area in your mock).
-4. Replace ad-hoc random money delta with an event generator and optional player choices.
-5. Implement the left purple sidebar and header to match the design mock (avatar, vertical stats text, logo + settings).
-6. Format money (Intl.NumberFormat) and improve localization.
-7. Add unit tests for `gameStore` logic (happy path + edge cases) and run TypeScript checks.
-8. Optional: achievements, save-slots, seedable RNG, polish/animations, analytics.
-9. If you'd like the profile to be editable from the Game screen or persisted as the player's saved slot, I can add UI and store actions for that.
-10. If you want strong runtime validation, I can add a small schema (zod) and validate before persisting.
-11. Implement course-specific post-completion side effects (e.g., unlocking career paths, adding license items.
-12. Convert fractional remaining years into an exact month/day estimate for graduation.
-13. Add a small "View progress" detail screen showing semester-by-semester progress and tuition paid.
-14. Use the new completedCertificates to implement unlocks (e.g., transfer from A.A. to B.A., or blocked paths removal when certificate is converted).
+1. Optional: achievements, save-slots, seedable RNG, polish/animations, analytics.
+2. If you'd like the profile to be editable from the Game screen or persisted as the player's saved slot, I can add UI and store actions for that.
+3. If you want strong runtime validation, I can add a small schema (zod) and validate before persisting.
+4. Implement course-specific post-completion side effects (e.g., unlocking career paths, adding license items).
+5. Convert fractional remaining years into an exact month/day estimate for graduation.
+6. Add a small "View progress" detail screen showing semester-by-semester progress and tuition paid.
+7. Use the new completedCertificates to implement unlocks (e.g., transfer from A.A. to B.A., or blocked paths removal when certificate is converted).
 
 ## Implementation log — persistence added
 
@@ -66,28 +59,8 @@ pnpm -w tsc --noEmit
 
 ## Concrete changes (what to edit, and why)
 
-### 1) LoadingScreen: reliable percent
-- Problem: current code reads `(progress as any)._value`. That uses a private field and is brittle.
-- Change: use an Animated.Value listener and mirrored React state:
-
-```tsx
-// conceptual snippet for `src/screens/LoadingScreen.tsx`
-const progress = useRef(new Animated.Value(0)).current;
-const [percent, setPercent] = useState(0);
-useEffect(() => {
-  const id = progress.addListener(({ value }) => setPercent(Math.round(value * 100)));
-  Animated.timing(progress, { toValue: 1, duration: 3000, useNativeDriver: false }).start(() => {
-    progress.removeListener(id);
-    navigation.replace('Home');
-  });
-  return () => progress.removeListener(id);
-}, []);
-```
-
-Why: reliable display of progress, avoids private API.
-
-
-### 2) Persist the game state
+### 1) Optional polish and features (later)
+- Save-slots, achievements, sound fx, animated event cards, social share, seedable RNG, analytics.
 - Problem: progress resets on app restart.
 - Change: use `@react-native-async-storage/async-storage` + `zustand` `persist` middleware. Add an `eventLog` array to the store and expose `addEvent`.
 

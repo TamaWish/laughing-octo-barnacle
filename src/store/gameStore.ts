@@ -54,6 +54,9 @@ type GameState = {
   clearCompletedSuggestions: () => void;
   addEvent: (msg: string) => void;
   reset: () => void;
+  // Relationship actions
+  spendTimewithFamilyMember: (memberId: string) => void;
+  giveGiftToFamilyMember: (memberId: string, cost: number) => void;
 };
 
 const useGameStore = create<GameState>()(
@@ -452,6 +455,79 @@ const useGameStore = create<GameState>()(
           return { eventLog: [...s.eventLog, `${d.toLocaleDateString()}: ${msg}`] };
         }),
   reset: () => set({ age: 0, money: 1000, eventLog: [], gameDate: new Date().toISOString() }),
+  spendTimewithFamilyMember: (memberId: string) => {
+    const state = get();
+    if (!state.profile) return;
+
+    const clamp = (v: number) => Math.max(0, Math.min(100, v));
+    let memberName = '';
+
+    const updatedProfile = { ...state.profile };
+    if (updatedProfile.partner?.id === memberId) {
+      updatedProfile.partner.relationshipScore = clamp((updatedProfile.partner.relationshipScore ?? 50) + 5);
+      memberName = updatedProfile.partner.firstName;
+    } else {
+      const family = updatedProfile.family;
+      if (family) {
+        const updateMember = (m: any) => {
+          if (m.id === memberId) {
+            m.relationshipScore = clamp((m.relationshipScore ?? 50) + 5);
+            memberName = m.firstName;
+          }
+          return m;
+        };
+        if (family.parents) family.parents = family.parents.map(updateMember);
+        if (family.siblings) family.siblings = family.siblings.map(updateMember);
+        if (family.children) family.children = family.children.map(updateMember);
+      }
+    }
+
+    set({
+      profile: updatedProfile,
+      happiness: clamp(state.happiness + 2),
+    });
+    get().addEvent(`Spent time with ${memberName}. Relationship +5, Happiness +2.`);
+  },
+
+  giveGiftToFamilyMember: (memberId: string, cost: number) => {
+    const state = get();
+    if (!state.profile || state.money < cost) {
+      if(state.money < cost) {
+        get().addEvent('Not enough money to give a gift.');
+        Toast.show({ type: 'error', text1: 'Action failed', text2: 'Not enough money for a gift.' });
+      }
+      return;
+    }
+
+    const clamp = (v: number) => Math.max(0, Math.min(100, v));
+    let memberName = '';
+
+    const updatedProfile = { ...state.profile };
+    if (updatedProfile.partner?.id === memberId) {
+      updatedProfile.partner.relationshipScore = clamp((updatedProfile.partner.relationshipScore ?? 50) + 10);
+      memberName = updatedProfile.partner.firstName;
+    } else {
+      const family = updatedProfile.family;
+      if (family) {
+        const updateMember = (m: any) => {
+          if (m.id === memberId) {
+            m.relationshipScore = clamp((m.relationshipScore ?? 50) + 10);
+            memberName = m.firstName;
+          }
+          return m;
+        };
+        if (family.parents) family.parents = family.parents.map(updateMember);
+        if (family.siblings) family.siblings = family.siblings.map(updateMember);
+        if (family.children) family.children = family.children.map(updateMember);
+      }
+    }
+
+    set({
+      profile: updatedProfile,
+      money: state.money - cost,
+    });
+    get().addEvent(`Gave a gift to ${memberName}. Relationship +10, Money -${cost}.`);
+  },
     }),
   { name: 'simslyfe-storage', storage: createJSONStorage(() => AsyncStorage) }
   )

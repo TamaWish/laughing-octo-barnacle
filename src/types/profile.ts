@@ -19,12 +19,13 @@ export type Profile = {
 };
 
 export type FamilyMember = {
-  id: string;
-  relation: 'parent' | 'sibling' | 'child';
+  id:string;
+  relation: 'parent' | 'sibling' | 'child' | 'partner';
   avatar?: number;
   gender: 'male' | 'female' | 'other';
   firstName: string;
   lastName?: string;
   age: number;
   alive?: boolean;
+  relationshipScore?: number; // 0-100
 };

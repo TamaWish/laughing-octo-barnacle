@@ -22,7 +22,6 @@ import Toast from 'react-native-toast-message';
 import EventLog from '../components/EventLog';
 import RelationshipsPanel from '../components/RelationshipsPanel';
 import { Profile } from '../types/profile';
-import { formatCurrency } from '../utils/formatters';
 import { characters, resolveAvatar } from '../constants/characters';
 
 const FIRST_NAMES = ['Alex','Sam','Taylor','Jordan','Casey','Riley','Jamie','Morgan','Charlie','Avery','Quinn','Dakota','Parker','Rowan','Sydney','Elliot'];
@@ -201,162 +200,6 @@ export default function GameScreen({ route, navigation }: Props) {
     </View>
   );
 
-  // Relationships panel
-  const RelationshipsPanel = () => {
-    const [childrenExpanded, setChildrenExpanded] = React.useState(false);
-    const [selectedMember, setSelectedMember] = React.useState<any | null>(null);
-    const [modalVisible, setModalVisible] = React.useState(false);
-
-    const openMember = (m: any) => {
-      setSelectedMember(m);
-      setModalVisible(true);
-    };
-
-    const closeModal = () => {
-      setModalVisible(false);
-      setSelectedMember(null);
-    };
-
-    const partner = profile?.partner;
-    const parents = profile?.family?.parents ?? [];
-    const siblings = profile?.family?.siblings ?? [];
-    // children may be present in family with relation 'child'
-    const children = (profile?.family && ((profile.family as any).children ?? [])) as any[] ?? [];
-
-    const renderMember = (m: any) => {
-  const src = resolveAvatar(m as any);
-      return (
-        <TouchableOpacity key={m.id} onPress={() => openMember(m)} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }}>
-          {src ? <Image source={src} style={{ width: 48, height: 48, borderRadius: 8, marginRight: 12 }} /> : <View style={{ width: 48, height: 48, borderRadius: 8, backgroundColor: '#ddd', marginRight: 12 }} />}
-          <View>
-            <Text style={{ fontWeight: '700' }}>{`${m.firstName} ${m.lastName ?? ''}`}</Text>
-            <Text style={{ color: '#666' }}>{`${m.relation ? `${m.relation}` : ''} • Age ${m.age}`}</Text>
-          </View>
-        </TouchableOpacity>
-      );
-    };
-
-    return (
-      <View style={[styles.actionsRow, { marginTop: 12 }]}> 
-        <Text style={styles.sectionTitle}>Relationships</Text>
-
-        <View style={[styles.card, { marginTop: 8 }]}> 
-          <Text style={{ fontWeight: '700', marginBottom: 8 }}>Partner</Text>
-          {partner ? renderMember(partner) : <TouchableOpacity onPress={() => {
-            // quick action to add a random partner
-            const newPartner = {
-              id: `p-${Date.now()}`,
-              relation: 'partner',
-              avatar: Math.floor(Math.random() * characters.length),
-              gender: Math.random() < 0.5 ? 'female' : 'male',
-              firstName: FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)],
-              lastName: profile?.lastName ?? '',
-              age: Math.floor(Math.random() * 30) + 18,
-              alive: true,
-            } as any;
-            const p = useGameStore.getState();
-            p.setProfile({ ...(p.profile as any), partner: newPartner });
-          }}><Text style={{ color: '#2b8cff' }}>Add random partner</Text></TouchableOpacity>}
-        </View>
-
-        <View style={[styles.card, { marginTop: 8 }]}> 
-          <Text style={{ fontWeight: '700', marginBottom: 8 }}>Family</Text>
-          <Text style={{ fontWeight: '600', marginTop: 4 }}>Parents</Text>
-          {parents.length === 0 ? <Text style={{ color: '#666' }}>No parents found.</Text> : parents.map(renderMember)}
-          <Text style={{ fontWeight: '600', marginTop: 8 }}>Siblings</Text>
-          {siblings.length === 0 ? <Text style={{ color: '#666' }}>No siblings.</Text> : siblings.map(renderMember)}
-        </View>
-
-        <View style={[styles.card, { marginTop: 8 }]}> 
-          <Text style={{ fontWeight: '700', marginBottom: 8 }}>Children</Text>
-          {children.length === 0 && <Text style={{ color: '#666' }}>No children yet.</Text>}
-          {children.length > 0 && (
-            <>
-              {children.length >= 5 ? (
-                <>
-                  <TouchableOpacity onPress={() => setChildrenExpanded((v) => !v)} style={{ marginBottom: 8 }}>
-                    <Text style={{ color: '#2b8cff' }}>{childrenExpanded ? 'Collapse children' : `Show ${children.length} children`}</Text>
-                  </TouchableOpacity>
-                  {childrenExpanded && children.map(renderMember)}
-                </>
-              ) : (
-                children.map(renderMember)
-              )}
-            </>
-          )}
-        </View>
-
-        <View style={[styles.card, { marginTop: 8 }]}> 
-          <Text style={{ fontWeight: '700', marginBottom: 8 }}>Friends</Text>
-          <Text style={{ color: '#666' }}>Friends will appear here.</Text>
-        </View>
-
-        {/* Member detail modal */}
-        <Modal visible={modalVisible} animationType="slide" transparent>
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)' }}>
-            <View style={{ width: '90%', backgroundColor: '#fff', borderRadius: 12, padding: 16 }}>
-              {selectedMember ? (
-                <>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    {selectedMember ? (
-                      <Image source={resolveAvatar(selectedMember)} style={{ width: 64, height: 64, borderRadius: 8, marginRight: 12 }} />
-                    ) : (
-                      <View style={{ width: 64, height: 64, borderRadius: 8, backgroundColor: '#ddd', marginRight: 12 }} />
-                    )}
-                    <View>
-                      <Text style={{ fontWeight: '800', fontSize: 18 }}>{`${selectedMember.firstName} ${selectedMember.lastName ?? ''}`}</Text>
-                      <Text style={{ color: '#666' }}>{`${selectedMember.relation} • Age ${selectedMember.age}`}</Text>
-                    </View>
-                  </View>
-                  <View style={{ height: 12 }} />
-                  <Button title="Build Relationship (+5 happiness)" onPress={() => {
-                    const st = useGameStore.getState();
-                    st.setProfile({ ...(st.profile as any), happiness: (st.happiness ?? 50) + 5 } as any);
-                    closeModal();
-                    st.addEvent(`Spent time with ${selectedMember.firstName}. Happiness +5.`);
-                  }} />
-                  <View style={{ height: 8 }} />
-                  <Button title="Add child to this member" onPress={() => {
-                    const st = useGameStore.getState();
-                    const child = {
-                      id: `c-${Date.now()}`,
-                      relation: 'child',
-                      avatar: Math.floor(Math.random() * characters.length),
-                      gender: Math.random() < 0.5 ? 'female' : 'male',
-                      firstName: FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)],
-                      lastName: st.profile?.lastName ?? '',
-                      age: 0,
-                      alive: true,
-                    } as any;
-                    const fam = st.profile?.family ?? { parents: [], siblings: [], children: [] };
-                    const nextFam = { ...fam, children: [...(fam.children ?? []), child] };
-                    st.setProfile({ ...(st.profile as any), family: nextFam });
-                    closeModal();
-                    st.addEvent(`A child was born: ${child.firstName} ${child.lastName}`);
-                  }} />
-                  <View style={{ height: 8 }} />
-                  <Button title="Remove member" color="crimson" onPress={() => {
-                    const st = useGameStore.getState();
-                    const prof = st.profile as any;
-                    const fam = prof.family ?? { parents: [], siblings: [], children: [] };
-                    const removeFrom = fam[`${selectedMember.relation}s`] ?? [];
-                    const nextArr = (removeFrom as any[]).filter((x) => x.id !== selectedMember.id);
-                    const nextFam = { ...fam, [`${selectedMember.relation}s`]: nextArr };
-                    st.setProfile({ ...prof, family: nextFam });
-                    closeModal();
-                    st.addEvent(`Removed ${selectedMember.firstName} from family.`);
-                  }} />
-                  <View style={{ height: 8 }} />
-                  <Button title="Close" onPress={closeModal} />
-                </>
-              ) : null}
-            </View>
-          </View>
-        </Modal>
-      </View>
-    );
-  };
-
   const BottomActionBar = () => (
     <View style={styles.bottomBar}>
       <View style={styles.navRow}>
@@ -409,7 +252,7 @@ export default function GameScreen({ route, navigation }: Props) {
             <View style={styles.bannerPlaceholder} />
           )}
           <View style={styles.inBannerLeft}><Text style={styles.goalRibbonText}>GOAL: SAVE FOR A HOUSE</Text></View>
-          <View style={styles.inBannerRight}><Text style={styles.bannerMoneyText}>{formatCurrency(money)}</Text></View>
+          <View style={styles.inBannerRight}><Text style={styles.bannerMoneyText}>{moneyFormatter.format(money)}</Text></View>
         </View>
 
         {/* Advance Year pill placed below the banner and above the actions */}

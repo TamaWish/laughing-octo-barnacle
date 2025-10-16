@@ -20,7 +20,9 @@ import { RootStackParamList, TabKey } from '../navigation';
 import useGameStore from '../store/gameStore';
 import Toast from 'react-native-toast-message';
 import EventLog from '../components/EventLog';
+import RelationshipsPanel from '../components/RelationshipsPanel';
 import { Profile } from '../types/profile';
+import { formatCurrency } from '../utils/formatters';
 import { characters, resolveAvatar } from '../constants/characters';
 
 const FIRST_NAMES = ['Alex','Sam','Taylor','Jordan','Casey','Riley','Jamie','Morgan','Charlie','Avery','Quinn','Dakota','Parker','Rowan','Sydney','Elliot'];
@@ -42,6 +44,11 @@ export default function GameScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const navHeight = useGameStore((s) => s.navHeight);
   const { age, money, advanceYear, reset } = useGameStore();
+  const moneyFormatter = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  });
   // dynamic stats (0-100)
   const happiness = useGameStore((s) => s.happiness);
   const health = useGameStore((s) => s.health);
@@ -402,7 +409,7 @@ export default function GameScreen({ route, navigation }: Props) {
             <View style={styles.bannerPlaceholder} />
           )}
           <View style={styles.inBannerLeft}><Text style={styles.goalRibbonText}>GOAL: SAVE FOR A HOUSE</Text></View>
-          <View style={styles.inBannerRight}><Text style={styles.bannerMoneyText}>${money}</Text></View>
+          <View style={styles.inBannerRight}><Text style={styles.bannerMoneyText}>{formatCurrency(money)}</Text></View>
         </View>
 
         {/* Advance Year pill placed below the banner and above the actions */}

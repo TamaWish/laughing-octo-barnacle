@@ -5,6 +5,7 @@ import { RootStackParamList } from '../navigation';
 import useGameStore from '../store/gameStore';
 // Import the new country map and helper function
 import { getEducationCatalog, getCountryMeta } from '../store/educationCatalog';
+import { formatCurrency } from '../utils/formatters';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Education'>;
 
@@ -55,7 +56,7 @@ export default function EducationScreen({ navigation, route }: Props) {
                           <Text style={styles.courseName}>{course.name} <Text style={styles.courseType}>[{course.type}]</Text></Text>
                           <Text style={styles.courseDesc}>{course.description}</Text>
                           <Text style={styles.courseMeta}>
-                            Duration: {course.duration} yr • Cost: ${course.cost}
+                            Duration: {course.duration} yr • Cost: {formatCurrency(course.cost)}
                             {course.requiredExam ? ` • Exam: ${course.requiredExam}` : ''}
                             {course.requiredStatus ? ` • Status: ${course.requiredStatus}` : ''}
                           </Text>
@@ -91,7 +92,7 @@ export default function EducationScreen({ navigation, route }: Props) {
                   <Text style={{ fontWeight: '800' }}>{selectedCourse.name}</Text>
                   <Text style={{ color: '#666', marginTop: 6 }}>{selectedCourse.description}</Text>
                   <Text style={{ color: '#666', marginTop: 8 }}>Duration: {selectedCourse.duration} years</Text>
-                  <Text style={{ color: '#666' }}>Cost: ${selectedCourse.cost}</Text>
+                  <Text style={{ color: '#666' }}>Cost: {formatCurrency(selectedCourse.cost)}</Text>
                   <View style={{ height: 12 }} />
                   <Button title="Confirm" onPress={() => { enrollCourse(selectedCourse); setConfirmVisible(false); setSelectedCourse(null); }} />
                   <View style={{ height: 8 }} />

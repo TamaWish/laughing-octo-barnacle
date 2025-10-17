@@ -35,6 +35,8 @@ export default function AppNavigator() {
         <Stack.Screen name="Assets" component={/* lazy */ (require('../screens/AssetsScreen').default)} />
         <Stack.Screen name="Load" component={/* lazy */ (require('../screens/system/LoadGameScreen').default)} />
         <Stack.Screen name="Game" component={/* lazy */ (require('../screens/wrappers/GameWrapped').default)} />
+        <Stack.Screen name="Career" component={/* lazy */ (require('../screens/wrappers/CareerWrapped').default)} />
+        <Stack.Screen name="Relationships" component={/* lazy */ (require('../screens/wrappers/RelationshipsWrapped').default)} />
       </Stack.Navigator>
     </NavigationContainer>
   );

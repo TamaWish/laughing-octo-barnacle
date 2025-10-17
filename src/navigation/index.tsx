@@ -5,8 +5,6 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 // import this navigation module — that creates a require cycle which can cause
 // uninitialized values at runtime. Use direct (or lazy) requires below instead.
 import { Profile } from '../types/profile';
-import CareerWrapped from '../screens/wrappers/CareerWrapped';
-import RelationshipsWrapped from '../screens/wrappers/RelationshipsWrapped';
 
 export type TabKey = 'Home' | 'Career' | 'Assets' | 'Skills' | 'Relationships' | 'Activities' | 'More';
 
@@ -36,8 +34,6 @@ export default function AppNavigator() {
         <Stack.Screen name="Education" component={/* lazy */ (require('../screens/wrappers/EducationWrapped').default)} />
         <Stack.Screen name="Assets" component={/* lazy */ (require('../screens/AssetsScreen').default)} />
         <Stack.Screen name="Load" component={/* lazy */ (require('../screens/system/LoadGameScreen').default)} />
-        <Stack.Screen name="Relationships" component={RelationshipsWrapped} />
-        <Stack.Screen name="Career" component={CareerWrapped} />
         <Stack.Screen name="Game" component={/* lazy */ (require('../screens/wrappers/GameWrapped').default)} />
       </Stack.Navigator>
     </NavigationContainer>

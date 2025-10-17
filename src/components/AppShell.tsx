@@ -15,6 +15,9 @@ export default function AppShell({ children, navigation }: any) {
   const age = useGameStore((s) => s.age);
   const happiness = useGameStore((s) => s.happiness);
   const health = useGameStore((s) => s.health);
+  const smarts = useGameStore((s) => s.smarts);
+  const looks = useGameStore((s) => s.looks);
+  const fame = useGameStore((s) => s.fame);
   const isCurrentlyEnrolled = useGameStore((s) => s.isCurrentlyEnrolled);
   const currentEnrollment = useGameStore((s) => s.currentEnrollment);
   const gameDate = useGameStore((s) => s.gameDate);
@@ -169,6 +172,23 @@ export default function AppShell({ children, navigation }: any) {
     }
   };
 
+  const money = useGameStore((s) => s.money);
+  const moneyFormatter = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  });
+
+  function countryCodeToFlag(code?: string) {
+    if (!code) return '';
+    return code
+      .toUpperCase()
+      .split('')
+      .map((c) => 127397 + c.charCodeAt(0))
+      .map((cp) => String.fromCodePoint(cp))
+      .join('');
+  }
+
   return (
     <View style={{ flex: 1, position: 'relative' }}>
       <View style={styles.statusBar}>
@@ -178,40 +198,14 @@ export default function AppShell({ children, navigation }: any) {
           </TouchableOpacity>
           <View style={styles.statusTextWrap}>
             <View style={styles.nameRow}><Text style={styles.statusName}>{profile ? `${profile.firstName} ${profile.lastName}` : 'Your Sim'}</Text></View>
-            <Text style={styles.statusMeta}>Age {age} • {profile ? (profile.country ?? '') : ''}</Text>
-            {isCurrentlyEnrolled && currentEnrollment ? (
-              <View style={{ marginTop: 6 }}>
-                <Text style={{ color: '#cfeafc', fontSize: 12 }}>{currentEnrollment.name} — {Math.max(0, currentEnrollment.timeRemaining)} yr remaining</Text>
-                {/* Progress bar */}
-                <View style={{ height: 8, backgroundColor: '#0b3042', borderRadius: 6, marginTop: 6, overflow: 'hidden' }}>
-                  {(() => {
-                    const dur = (currentEnrollment.duration || 1);
-                    const rem = Math.max(0, currentEnrollment.timeRemaining || 0);
-                    const completed = Math.max(0, dur - rem);
-                    const pct = Math.max(0, Math.min(100, Math.round((completed / dur) * 100)));
-                    return <View style={{ width: `${pct}%`, height: '100%', backgroundColor: '#2ecc71' }} />;
-                  })()}
-                </View>
-                {/* Estimated graduation */}
-                {gameDate ? (() => {
-                  try {
-                    const d = new Date(gameDate);
-                    const rem = Math.max(0, currentEnrollment.timeRemaining || 0);
-                    const grad = new Date(d);
-                    grad.setFullYear(grad.getFullYear() + Math.ceil(rem));
-                    return <Text style={{ color: '#cfeafc', fontSize: 11, marginTop: 4 }}>Est. graduation: {grad.toLocaleDateString()}</Text>;
-                  } catch (e) { return null; }
-                })() : null}
-              </View>
-            ) : null}
+            <Text style={styles.statusMeta}>Age {age} • {countryCodeToFlag(profile?.country)}</Text>
           </View>
         </View>
 
         <View style={styles.statusRight}>
-          <View style={styles.gameStat}><Text style={styles.gameStatIcon}>😊</Text><Text style={styles.gameStatText}>{happiness ?? 0}%</Text></View>
-          <View style={styles.gameStat}><Text style={styles.gameStatIcon}>❤️</Text><Text style={styles.gameStatText}>{health ?? 0}%</Text></View>
+          <View style={styles.gameStat}><Text style={styles.gameStatIcon}>💰</Text><Text style={styles.gameStatText}>{moneyFormatter.format(money)}</Text></View>
           <TouchableOpacity style={styles.gameStat} onPress={() => setSettingsVisible(true)} accessibilityRole="button" accessibilityLabel="Settings">
-            <MaterialCommunityIcons name="cog-outline" size={18} color="#fff" />
+            <MaterialCommunityIcons name="cog-outline" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
       </View>
@@ -254,162 +248,226 @@ export default function AppShell({ children, navigation }: any) {
   </View>
 
       {/* Settings modal */}
-      <Modal visible={settingsVisible} animationType="slide" transparent>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)' }}>
-          <View style={{ width: '90%', backgroundColor: '#fff', borderRadius: 12, padding: 16 }}>
-            <Text style={{ fontWeight: '800', fontSize: 18, marginBottom: 8 }}>Settings</Text>
-            <Text style={{ color: '#666', marginBottom: 12 }}>Game settings and preferences will go here.</Text>
-            <View style={{ marginBottom: 8 }}>
-              <Button title="Save Profile" onPress={async () => { await saveProfile(); setSettingsVisible(false); }} />
-            </View>
-            <View style={{ marginBottom: 8 }}>
-              <Button title="Load Profile" onPress={async () => { await refreshSaves(); setLoadVisible(true); }} />
-            </View>
-            <View style={{ marginBottom: 8 }}>
-              <Button title="Start New Life" color="crimson" onPress={() => {
-                Alert.alert('Start New Life', 'How would you like to start a new life?', [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Preserve current (save & start new)', onPress: async () => {
-                    try {
-                      await saveProfile();
-                      await AsyncStorage.removeItem(NEW_CURRENT_KEY);
-                      setCurrentSaveId(null);
-                      const st = useGameStore.getState();
-                      st.reset();
-                      Toast.show({ type: 'success', text1: 'New life started', text2: 'Previous life preserved.', position: 'bottom' });
-                      setSettingsVisible(false);
-                      navigation && navigation.navigate('Home');
-                    } catch (e) {
-                      console.warn('start new preserve failed', e);
-                      Alert.alert('Failed', 'Could not preserve and start new life.');
-                    }
-                  } },
-                  { text: 'Reset current (clear everything)', style: 'destructive', onPress: async () => {
-                    const st = useGameStore.getState();
-                    st.reset();
+      {/* Settings Modal - Modern Design */}
+      <Modal visible={settingsVisible} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Settings</Text>
+          
+          <TouchableOpacity style={styles.modalButton} onPress={async () => { await saveProfile(); setSettingsVisible(false); }}>
+            <MaterialCommunityIcons name="content-save" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.modalButtonText}>Save Game</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.modalButton} onPress={async () => { await refreshSaves(); setLoadVisible(true); setSettingsVisible(false); }}>
+            <MaterialCommunityIcons name="folder-open" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.modalButtonText}>Load Game</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.modalButton, { backgroundColor: '#ef4444' }]} 
+            onPress={() => {
+              Alert.alert('Start New Life', 'How would you like to start a new life?', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Preserve current (save & start new)', onPress: async () => {
+                  try {
+                    await saveProfile();
                     await AsyncStorage.removeItem(NEW_CURRENT_KEY);
                     setCurrentSaveId(null);
-                    Toast.show({ type: 'success', text1: 'New life started', position: 'bottom' });
+                    const st = useGameStore.getState();
+                    st.reset();
+                    Toast.show({ type: 'success', text1: 'New life started', text2: 'Previous life preserved.', position: 'bottom' });
                     setSettingsVisible(false);
                     navigation && navigation.navigate('Home');
-                  } }
-                ]);
-              }} />
-            </View>
-            <Button title="Close" onPress={() => setSettingsVisible(false)} />
-          </View>
+                  } catch (e) {
+                    console.warn('start new preserve failed', e);
+                    Alert.alert('Failed', 'Could not preserve and start new life.');
+                  }
+                } },
+                { text: 'Reset current (clear everything)', style: 'destructive', onPress: async () => {
+                  const st = useGameStore.getState();
+                  st.reset();
+                  await AsyncStorage.removeItem(NEW_CURRENT_KEY);
+                  setCurrentSaveId(null);
+                  Toast.show({ type: 'success', text1: 'New life started', position: 'bottom' });
+                  setSettingsVisible(false);
+                  navigation && navigation.navigate('Home');
+                } }
+              ]);
+            }}
+          >
+            <MaterialCommunityIcons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.modalButtonText}>Start New Life</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={[styles.modalButton, styles.modalCloseButton]} onPress={() => setSettingsVisible(false)}>
+            <Text style={[styles.modalButtonText, styles.modalCloseButtonText]}>Close</Text>
+          </TouchableOpacity>
         </View>
       </Modal>
 
       {/* Profile modal */}
       <Modal visible={profileVisible} animationType="slide" transparent>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)' }}>
-          <View style={{ width: '92%', backgroundColor: '#fff', borderRadius: 12, padding: 16 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              {avatarSource ? <Image source={avatarSource} style={{ width: 72, height: 72, borderRadius: 12, marginRight: 12 }} /> : <View style={{ width: 72, height: 72, borderRadius: 12, backgroundColor: '#ddd', marginRight: 12 }} />}
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontWeight: '900', fontSize: 18 }}>{profile ? `${profile.firstName} ${profile.lastName ?? ''}` : 'Your Sim'}</Text>
-                <Text style={{ color: '#666' }}>{profile ? (profile.country ?? '') : ''}</Text>
-                <View style={{ height: 8 }} />
-                {/* two-column summary */}
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <View style={{ flex: 1, marginRight: 8 }}>
-                    <Text style={{ color: '#666', fontSize: 12 }}>Gender</Text>
-                    <Text style={{ fontWeight: '800' }}>{profile?.gender ? `${profile.gender.charAt(0).toUpperCase()}${profile.gender.slice(1)}` : 'Unknown'}</Text>
+          <View style={{ width: '92%', maxHeight: '90%', backgroundColor: '#fff', borderRadius: 12, padding: 16 }}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                {avatarSource ? <Image source={avatarSource} style={{ width: 72, height: 72, borderRadius: 12, marginRight: 12 }} /> : <View style={{ width: 72, height: 72, borderRadius: 12, backgroundColor: '#ddd', marginRight: 12 }} />}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: '900', fontSize: 18 }}>{profile ? `${profile.firstName} ${profile.lastName ?? ''}` : 'Your Sim'}</Text>
+                  <Text style={{ color: '#666' }}>{profile ? (profile.country ?? '') : ''}</Text>
+                  <View style={{ height: 8 }} />
+                  {/* two-column summary */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={{ color: '#666', fontSize: 12 }}>Gender</Text>
+                      <Text style={{ fontWeight: '800' }}>{profile?.gender ? `${profile.gender.charAt(0).toUpperCase()}${profile.gender.slice(1)}` : 'Unknown'}</Text>
+                    </View>
+                    <View style={{ width: 90 }}>
+                      <Text style={{ color: '#666', fontSize: 12 }}>Age</Text>
+                      <Text style={{ fontWeight: '800' }}>{age}</Text>
+                    </View>
                   </View>
-                  <View style={{ width: 90 }}>
-                    <Text style={{ color: '#666', fontSize: 12 }}>Age</Text>
-                    <Text style={{ fontWeight: '800' }}>{age}</Text>
+                  <View style={{ height: 8 }} />
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={{ color: '#666', fontSize: 12 }}>Marital Status</Text>
+                      <Text style={{ fontWeight: '800' }}>{profile?.partner ? 'Married/Partnered' : 'Single'}</Text>
+                    </View>
+                    <View style={{ width: 90 }}>
+                      <Text style={{ color: '#666', fontSize: 12 }}>Education</Text>
+                      <Text style={{ fontWeight: '800' }}>{(profile as any)?.education ?? 'Unknown'}</Text>
+                    </View>
+                  </View>
+                  <View style={{ height: 8 }} />
+                  <View>
+                    <Text style={{ color: '#666', fontSize: 12 }}>Location</Text>
+                    <Text style={{ fontWeight: '800' }}>{profile?.country ?? 'Unknown'}</Text>
                   </View>
                 </View>
-                <View style={{ height: 8 }} />
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <View style={{ flex: 1, marginRight: 8 }}>
-                    <Text style={{ color: '#666', fontSize: 12 }}>Marital Status</Text>
-                    <Text style={{ fontWeight: '800' }}>{profile?.partner ? 'Married/Partnered' : 'Single'}</Text>
-                  </View>
-                  <View style={{ width: 90 }}>
-                    <Text style={{ color: '#666', fontSize: 12 }}>Education</Text>
-                    <Text style={{ fontWeight: '800' }}>{(profile as any)?.education ?? 'Unknown'}</Text>
+              </View>
+
+              <View style={{ height: 20 }} />
+
+              {/* Stats Section */}
+              <View style={{ backgroundColor: '#f9fafb', padding: 16, borderRadius: 12, marginBottom: 12 }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', marginBottom: 12, color: '#111827' }}>Stats</Text>
+                
+                <View style={{ marginBottom: 10 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={{ fontSize: 14, color: '#374151', width: 100 }}>Happiness</Text>
+                    <View style={{ flex: 1, height: 20, backgroundColor: '#e5e7eb', borderRadius: 10, overflow: 'hidden', marginHorizontal: 8 }}>
+                      <View style={{ height: '100%', width: `${happiness ?? 0}%`, backgroundColor: '#fbbf24', borderRadius: 10 }} />
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#111827', width: 45, textAlign: 'right' }}>{happiness ?? 0}%</Text>
                   </View>
                 </View>
-                <View style={{ height: 8 }} />
-                <View>
-                  <Text style={{ color: '#666', fontSize: 12 }}>Location</Text>
-                  <Text style={{ fontWeight: '800' }}>{profile?.country ?? 'Unknown'}</Text>
+
+                <View style={{ marginBottom: 10 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={{ fontSize: 14, color: '#374151', width: 100 }}>Health</Text>
+                    <View style={{ flex: 1, height: 20, backgroundColor: '#e5e7eb', borderRadius: 10, overflow: 'hidden', marginHorizontal: 8 }}>
+                      <View style={{ height: '100%', width: `${health ?? 0}%`, backgroundColor: '#f87171', borderRadius: 10 }} />
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#111827', width: 45, textAlign: 'right' }}>{health ?? 0}%</Text>
+                  </View>
+                </View>
+
+                <View style={{ marginBottom: 10 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={{ fontSize: 14, color: '#374151', width: 100 }}>Smarts</Text>
+                    <View style={{ flex: 1, height: 20, backgroundColor: '#e5e7eb', borderRadius: 10, overflow: 'hidden', marginHorizontal: 8 }}>
+                      <View style={{ height: '100%', width: `${smarts ?? 0}%`, backgroundColor: '#60a5fa', borderRadius: 10 }} />
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#111827', width: 45, textAlign: 'right' }}>{smarts ?? 0}%</Text>
+                  </View>
+                </View>
+
+                <View style={{ marginBottom: 10 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={{ fontSize: 14, color: '#374151', width: 100 }}>Looks</Text>
+                    <View style={{ flex: 1, height: 20, backgroundColor: '#e5e7eb', borderRadius: 10, overflow: 'hidden', marginHorizontal: 8 }}>
+                      <View style={{ height: '100%', width: `${looks ?? 0}%`, backgroundColor: '#fb923c', borderRadius: 10 }} />
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#111827', width: 45, textAlign: 'right' }}>{looks ?? 0}%</Text>
+                  </View>
+                </View>
+
+                <View style={{ marginBottom: 0 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={{ fontSize: 14, color: '#374151', width: 100 }}>Fame</Text>
+                    <View style={{ flex: 1, height: 20, backgroundColor: '#e5e7eb', borderRadius: 10, overflow: 'hidden', marginHorizontal: 8 }}>
+                      <View style={{ height: '100%', width: `${fame ?? 0}%`, backgroundColor: '#d1d5db', borderRadius: 10 }} />
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#111827', width: 45, textAlign: 'right' }}>{fame ?? 0}%</Text>
+                  </View>
                 </View>
               </View>
-            </View>
 
-            <View style={{ height: 12 }} />
-
-            {/* side-by-side stat cards so Health sits closer to Happiness */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-              <View style={{ flex: 1, backgroundColor: '#f3f7fb', padding: 10, borderRadius: 8, alignItems: 'center' }}>
-                <Text style={{ color: '#666', fontSize: 12 }}>Happiness</Text>
-                <Text style={{ fontWeight: '900', fontSize: 18 }}>{happiness ?? 0}%</Text>
+              {/* Quick links moved from bottom nav: Assets & Skills */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+                <TouchableOpacity style={{ flex: 1, marginRight: 8, padding: 10, backgroundColor: '#e6f0ff', borderRadius: 8, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }} onPress={() => { setProfileVisible(false); goToGameTab('Assets'); }}>
+                  <MaterialCommunityIcons name="wallet-outline" size={18} color="#12323e" style={{ marginRight: 8 }} />
+                  <Text style={{ fontWeight: '700' }}>Assets</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={{ flex: 1, marginLeft: 8, padding: 10, backgroundColor: '#e6f0ff', borderRadius: 8, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }} onPress={() => { setProfileVisible(false); goToGameTab('Skills'); }}>
+                  <MaterialCommunityIcons name="brain" size={18} color="#12323e" style={{ marginRight: 8 }} />
+                  <Text style={{ fontWeight: '700' }}>Skills</Text>
+                </TouchableOpacity>
               </View>
-              <View style={{ flex: 1, backgroundColor: '#fff0f0', padding: 10, borderRadius: 8, alignItems: 'center' }}>
-                <Text style={{ color: '#666', fontSize: 12 }}>Health</Text>
-                <Text style={{ fontWeight: '900', fontSize: 18 }}>{health ?? 0}%</Text>
-              </View>
-            </View>
-
-            <View style={{ height: 12 }} />
-
-            {/* Quick links moved from bottom nav: Assets & Skills */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
-              <TouchableOpacity style={{ flex: 1, marginRight: 8, padding: 10, backgroundColor: '#e6f0ff', borderRadius: 8, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }} onPress={() => { setProfileVisible(false); goToGameTab('Assets'); }}>
-                <MaterialCommunityIcons name="wallet-outline" size={18} color="#12323e" style={{ marginRight: 8 }} />
-                <Text style={{ fontWeight: '700' }}>Assets</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={{ flex: 1, marginLeft: 8, padding: 10, backgroundColor: '#e6f0ff', borderRadius: 8, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }} onPress={() => { setProfileVisible(false); goToGameTab('Skills'); }}>
-                <MaterialCommunityIcons name="brain" size={18} color="#12323e" style={{ marginRight: 8 }} />
-                <Text style={{ fontWeight: '700' }}>Skills</Text>
-              </TouchableOpacity>
-            </View>
+            </ScrollView>
 
             <Button title="Close" onPress={() => setProfileVisible(false)} />
           </View>
         </View>
       </Modal>
 
-      {/* Load modal */}
-      <Modal visible={loadVisible} animationType="slide" transparent>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)' }}>
-          <View style={{ width: '92%', backgroundColor: '#fff', borderRadius: 12, padding: 12, maxHeight: '80%' }}>
-            <Text style={{ fontWeight: '800', fontSize: 18, marginBottom: 8 }}>Load Profile</Text>
+      {/* Load Game Modal - Modern Design */}
+      <Modal visible={loadVisible} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Load Game</Text>
+          
+          <TouchableOpacity style={styles.modalButton} onPress={refreshSaves}>
+            <MaterialCommunityIcons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.modalButtonText}>Refresh Saves</Text>
+          </TouchableOpacity>
+          
+          <ScrollView style={styles.savesList}>
             {savedSlots.length === 0 ? (
-              <View style={{ alignItems: 'center' }}>
-                <Text>No saved profiles found.</Text>
-                <View style={{ height: 12 }} />
-                <Button title="Refresh" onPress={refreshSaves} />
-              </View>
+              <Text style={styles.noSavesText}>No saved games found</Text>
             ) : (
-              <ScrollView>
-                {savedSlots.map((s) => {
-                  const avatar = resolveAvatar(s.profile) ?? characters[0];
-                  return (
-                    <View key={s.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderColor: '#eee' }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Image source={avatar} style={{ width: 48, height: 48, borderRadius: 8 }} />
-                        <View style={{ marginLeft: 12 }}>
-                          <Text style={{ fontWeight: '700' }}>{s.name ?? `${s.profile?.firstName ?? 'Unknown'}`}</Text>
-                          <Text style={{ color: '#666' }}>{s.profile?.country} • {new Date(s.createdAt).toLocaleString()}</Text>
-                        </View>
-                      </View>
-                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <TouchableOpacity onPress={() => loadSlot(s)} style={{ padding: 8, marginRight: 8, backgroundColor: '#e6f0ff', borderRadius: 6 }}><Text>Load</Text></TouchableOpacity>
-                        <TouchableOpacity onPress={() => deleteSlot(s.id)} style={{ padding: 8 }}><Text style={{ color: 'crimson' }}>Delete</Text></TouchableOpacity>
+              savedSlots.map((s) => {
+                const avatar = resolveAvatar(s.profile) ?? characters[0];
+                return (
+                  <View key={s.id} style={styles.saveSlot}>
+                    <View style={styles.saveSlotInfo}>
+                      <Image source={avatar} style={styles.saveSlotAvatar} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.saveSlotName}>{s.name ?? `${s.profile?.firstName ?? 'Unknown'}`}</Text>
+                        <Text style={styles.saveSlotMeta}>
+                          Age {s.state?.age || 0} • {s.profile?.country || 'Unknown'}
+                        </Text>
+                        <Text style={styles.saveSlotDate}>
+                          {new Date(s.createdAt).toLocaleString()}
+                        </Text>
                       </View>
                     </View>
-                  );
-                })}
-              </ScrollView>
+                    <View style={styles.saveSlotButtons}>
+                      <TouchableOpacity style={styles.loadButton} onPress={() => loadSlot(s)}>
+                        <Text style={styles.loadButtonText}>Load</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.deleteButton} onPress={() => deleteSlot(s.id)}>
+                        <Text style={styles.deleteButtonText}>Delete</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })
             )}
-            <View style={{ height: 8 }} />
-            <Button title="Close" onPress={() => setLoadVisible(false)} />
-          </View>
+          </ScrollView>
+          
+          <TouchableOpacity style={[styles.modalButton, styles.modalCloseButton]} onPress={() => setLoadVisible(false)}>
+            <Text style={[styles.modalButtonText, styles.modalCloseButtonText]}>Close</Text>
+          </TouchableOpacity>
         </View>
       </Modal>
     </View>
@@ -435,4 +493,68 @@ const styles = StyleSheet.create({
   navItemActive: { /* subtle active state */ transform: [{ scale: 1.02 }] },
   smallIconLabelActive: { color: '#2ecc71' },
   smallIconLabel: { color: '#bcd7e6', fontSize: 11 },
+  
+  // Modern Modal Styles
+  modalContent: { flex: 1, padding: 20, backgroundColor: '#fff', paddingTop: 60 },
+  modalTitle: { fontSize: 28, fontWeight: '700', marginBottom: 24, textAlign: 'center', color: '#111827' },
+  modalButton: { 
+    backgroundColor: '#3b82f6', 
+    padding: 16, 
+    borderRadius: 12, 
+    marginBottom: 12, 
+    flexDirection: 'row',
+    alignItems: 'center', 
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  modalButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  modalCloseButton: { backgroundColor: '#f3f4f6', marginTop: 12 },
+  modalCloseButtonText: { color: '#374151' },
+  savesList: { flex: 1, marginBottom: 16 },
+  noSavesText: { textAlign: 'center', color: '#6b7280', fontSize: 16, marginTop: 20 },
+  saveSlot: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    padding: 16, 
+    backgroundColor: '#f9fafb', 
+    borderRadius: 12, 
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  saveSlotInfo: { flex: 1, marginRight: 12, flexDirection: 'row', alignItems: 'center' },
+  saveSlotAvatar: { width: 48, height: 48, borderRadius: 8, marginRight: 12 },
+  saveSlotName: { fontSize: 16, fontWeight: '600', color: '#111827', marginBottom: 4 },
+  saveSlotMeta: { fontSize: 14, color: '#6b7280', marginBottom: 2 },
+  saveSlotDate: { fontSize: 12, color: '#9ca3af' },
+  saveSlotButtons: { flexDirection: 'column', gap: 8 },
+  loadButton: { 
+    backgroundColor: '#10b981', 
+    paddingHorizontal: 16, 
+    paddingVertical: 8, 
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  loadButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  deleteButton: { 
+    backgroundColor: '#ef4444', 
+    paddingHorizontal: 16, 
+    paddingVertical: 8, 
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  deleteButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
 });

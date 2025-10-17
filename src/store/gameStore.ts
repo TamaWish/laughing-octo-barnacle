@@ -8,6 +8,8 @@ import { LIFE_EVENTS } from '../constants/events';
 import { Course, Enrollment } from './types/education';
 import { COUNTRY_EDUCATION_MAP } from './educationCatalog';
 import { TabKey } from '../navigation';
+import { CareerState, Job, PartTimeJob } from '../types/career';
+import { JOBS, getJobsByPath, getJobById } from '../constants/careers';
 import Toast from 'react-native-toast-message';
 
 type GameState = {
@@ -19,6 +21,8 @@ type GameState = {
   currentEnrollment?: Enrollment | null;
   completedDegrees: string[];
   completedCertificates: string[]; // store completed course IDs for robust bookkeeping
+  // career system
+  career: CareerState;
   // core dynamic stats (0-100)
   health: number;
   happiness: number;
@@ -37,6 +41,13 @@ type GameState = {
   enrollCourse: (course: Course) => void;
   dropEnrollment: (penalty?: number) => void;
   handleCourseCompletion: (completedCourse: Enrollment) => void;
+  // Career actions
+  applyForJob: (job: Job) => void;
+  work: () => void;
+  quitJob: () => void;
+  applyForPartTimeJob: (job: any) => void;
+  workPartTime: (hours: number) => void;
+  quitPartTimeJob: () => void;
   // current in-game tab for UI highlighting (Home, Career, Assets, Skills, Relationships, Activities, More)
   currentGameTab: TabKey;
   setCurrentGameTab: (t: TabKey) => void;
@@ -47,7 +58,6 @@ type GameState = {
   setAutosaveCallback: (fn: (() => void) | null) => void;
   advanceYear: () => void;
   visitDoctor: (cost?: number) => void;
-  takePartTimeJob: () => void;
   investStocks: () => void;
   planDate: () => void;
   goToGym: () => void;
@@ -82,6 +92,14 @@ const useGameStore = create<GameState>()(
   currentEnrollment: null,
   completedDegrees: [],
   completedCertificates: [],
+  // career defaults
+  career: {
+    currentJob: null,
+    careerHistory: [],
+    workExperience: 0,
+    partTimeJob: null,
+    partTimeHoursWorked: 0,
+  },
       money: 1000,
       // default starting stats
       health: 85,
@@ -132,6 +150,10 @@ const useGameStore = create<GameState>()(
                 gameDate: next.toISOString(),
                 health: clamp((s.health ?? 70) + healthLoss),
                 happiness: clamp((s.happiness ?? 50) + happyDelta),
+                career: {
+                  ...s.career,
+                  partTimeHoursWorked: 0, // Reset part-time hours at the start of new year
+                },
               };
             });
             // auto-enroll in kindergarten at age 3 if not already enrolled
@@ -562,6 +584,165 @@ const useGameStore = create<GameState>()(
     });
     get().addEvent(`Gave a gift to ${memberName}. Relationship +10, Money -${cost}.`);
   },
+
+  // Career actions
+  applyForJob: (job: Job) => {
+    const state = get();
+    // Check requirements
+    if (job.requiredAge && state.age < job.requiredAge) {
+      Toast.show({ type: 'error', text1: 'Application failed', text2: `Must be at least ${job.requiredAge} years old.` });
+      return;
+    }
+    if (job.requiredEducation && state.educationStatus < job.requiredEducation) {
+      Toast.show({ type: 'error', text1: 'Application failed', text2: 'Education requirements not met.' });
+      return;
+    }
+    if (job.requiredSmarts && state.smarts < job.requiredSmarts) {
+      Toast.show({ type: 'error', text1: 'Application failed', text2: 'Smarts requirement not met.' });
+      return;
+    }
+    if (state.career.currentJob) {
+      Toast.show({ type: 'error', text1: 'Application failed', text2: 'You already have a job. Quit first.' });
+      return;
+    }
+
+    set((s) => ({
+      career: {
+        ...s.career,
+        currentJob: job,
+        careerHistory: [...s.career.careerHistory, job],
+      },
+    }));
+    get().addEvent(`Applied for and got the job: ${job.title} at $${job.baseSalary}/year.`);
+    Toast.show({ type: 'success', text1: 'Job secured!', text2: `You got the ${job.title} position.` });
+  },
+
+  work: () => {
+    const state = get();
+    if (!state.career.currentJob) {
+      Toast.show({ type: 'error', text1: 'Work failed', text2: 'You have no job to work at.' });
+      return;
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    if (state.career.lastWorkedDate === today) {
+      Toast.show({ type: 'error', text1: 'Work failed', text2: 'You already worked today.' });
+      return;
+    }
+
+    const salary = state.career.currentJob.baseSalary;
+    const dailyPay = Math.floor(salary / 365);
+    const experienceGain = Math.floor(Math.random() * 5) + 1; // 1-5 experience points
+
+    set((s) => ({
+      money: s.money + dailyPay,
+      career: {
+        ...s.career,
+        workExperience: s.career.workExperience + experienceGain,
+        lastWorkedDate: today,
+      },
+      happiness: Math.max(0, (s.happiness ?? 50) - 2), // Working reduces happiness slightly
+    }));
+
+    get().addEvent(`Worked and earned $${dailyPay}. Experience +${experienceGain}. Happiness -2.`);
+    Toast.show({ type: 'success', text1: 'Work day completed', text2: `Earned $${dailyPay}, gained ${experienceGain} experience.` });
+  },
+
+  quitJob: () => {
+    const state = get();
+    if (!state.career.currentJob) {
+      Toast.show({ type: 'error', text1: 'Quit failed', text2: 'You have no job to quit.' });
+      return;
+    }
+
+    const jobTitle = state.career.currentJob.title;
+    set((s) => ({
+      career: {
+        ...s.career,
+        currentJob: null,
+      },
+    }));
+    get().addEvent(`Quit your job as ${jobTitle}.`);
+    Toast.show({ type: 'info', text1: 'Job quit', text2: `You quit your job as ${jobTitle}.` });
+  },
+
+  applyForPartTimeJob: (job: PartTimeJob) => {
+    const state = get();
+    if (state.career.partTimeJob) {
+      Toast.show({ type: 'error', text1: 'Application failed', text2: 'You can only have one part-time job at a time.' });
+      return;
+    }
+
+    // Check age requirements
+    const hasAgeRequirement = job.requirements.some(req => req.includes('Age'));
+    if (hasAgeRequirement) {
+      const ageReq = job.requirements.find(req => req.includes('Age'));
+      if (ageReq && ageReq.includes('18+') && state.age < 18) {
+        Toast.show({ type: 'error', text1: 'Application failed', text2: 'You must be 18 or older for this job.' });
+        return;
+      }
+    }
+
+    set((s) => ({
+      career: {
+        ...s.career,
+        partTimeJob: job,
+        partTimeHoursWorked: 0,
+      },
+    }));
+    get().addEvent(`Started part-time job as ${job.title} at ${job.company}.`);
+    Toast.show({ type: 'success', text1: 'Job accepted', text2: `You got a part-time job as ${job.title}!` });
+  },
+
+  workPartTime: (hours: number) => {
+    const state = get();
+    if (!state.career.partTimeJob) {
+      Toast.show({ type: 'error', text1: 'Work failed', text2: 'You have no part-time job.' });
+      return;
+    }
+
+    const maxHoursPerWeek = state.career.partTimeJob.hoursPerWeek;
+    const currentHours = state.career.partTimeHoursWorked;
+    
+    if (currentHours + hours > maxHoursPerWeek) {
+      Toast.show({ type: 'error', text1: 'Work failed', text2: `You can only work ${maxHoursPerWeek} hours per week. You've already worked ${currentHours} hours.` });
+      return;
+    }
+
+    const earnings = state.career.partTimeJob.hourlyRate * hours;
+    
+    set((s) => ({
+      money: s.money + earnings,
+      career: {
+        ...s.career,
+        partTimeHoursWorked: s.career.partTimeHoursWorked + hours,
+      },
+      happiness: Math.max(0, (s.happiness ?? 50) - 1), // Part-time work reduces happiness slightly
+    }));
+
+    get().addEvent(`Worked part-time for ${hours} hours and earned $${earnings}. Happiness -1.`);
+    Toast.show({ type: 'success', text1: 'Part-time work completed', text2: `Earned $${earnings} for ${hours} hours of work.` });
+  },
+
+  quitPartTimeJob: () => {
+    const state = get();
+    if (!state.career.partTimeJob) {
+      Toast.show({ type: 'error', text1: 'Quit failed', text2: 'You have no part-time job to quit.' });
+      return;
+    }
+
+    const jobTitle = state.career.partTimeJob.title;
+    set((s) => ({
+      career: {
+        ...s.career,
+        partTimeJob: null,
+        partTimeHoursWorked: 0,
+      },
+    }));
+    get().addEvent(`Quit your part-time job as ${jobTitle}.`);
+    Toast.show({ type: 'info', text1: 'Part-time job quit', text2: `You quit your part-time job as ${jobTitle}.` });
+  },
+
   assets: [],
   buyAsset: (asset: Asset) => {
     const state = get();

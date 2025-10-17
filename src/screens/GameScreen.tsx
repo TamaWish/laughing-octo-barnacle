@@ -12,7 +12,6 @@ import {
   Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { LinearGradient } from 'expo-linear-gradient';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -20,10 +19,12 @@ import { RootStackParamList, TabKey } from '../navigation';
 import useGameStore from '../store/gameStore';
 import Toast from 'react-native-toast-message';
 import EventLog from '../components/EventLog';
-import StatBar from '../components/StatBar';
 import ActionCard from '../components/ActionCard';
 import SkillsPanel from '../components/SkillsPanel';
 import AssetsScreen from './AssetsScreen';
+import CareerScreen from './CareerScreen';
+import EducationInfo from '../components/EducationInfo';
+import ActionButtons from '../components/ActionButtons';
 import { Profile } from '../types/profile';
 import { characters, resolveAvatar } from '../constants/characters';
 
@@ -46,17 +47,14 @@ export default function GameScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const navHeight = useGameStore((s) => s.navHeight);
   const { age, money, advanceYear, reset } = useGameStore();
+  // Subscribe to education state for reactive updates
+  const isCurrentlyEnrolled = useGameStore((s) => s.isCurrentlyEnrolled);
+  const currentEnrollment = useGameStore((s) => s.currentEnrollment);
   const moneyFormatter = new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
     maximumFractionDigits: 0,
   });
-  // dynamic stats (0-100)
-  const happiness = useGameStore((s) => s.happiness);
-  const health = useGameStore((s) => s.health);
-  const smarts = useGameStore((s) => s.smarts);
-  const looks = useGameStore((s) => s.looks);
-  const fame = useGameStore((s) => s.fame);
   const { width, height: windowHeight } = useWindowDimensions();
   const compact = width < 380;
   // local selected nav item (used for active-state highlighting)
@@ -86,11 +84,8 @@ export default function GameScreen({ route, navigation }: Props) {
   // local state to force regeneration of suggestions
   const [suggestSeed, setSuggestSeed] = React.useState(0);
 
-  // measure the stats card height so we can pad the ScrollView to scroll under it
-  const [statsHeight, setStatsHeight] = React.useState<number>(0);
-  // debug: compute spacing values and optionally show overlay in dev
-  const computedPaddingBottom = insets.bottom + (navHeight || 86) + (statsHeight || 0);
-  const statsBottomOffset = insets.bottom + (navHeight || 86);
+  // Padding for scroll view (bottom nav only, no stats card anymore)
+  const computedPaddingBottom = insets.bottom + (navHeight || 86);
 
   // debug logging removed for production
 
@@ -110,7 +105,134 @@ export default function GameScreen({ route, navigation }: Props) {
   const markCompleted = useGameStore((s) => s.markSuggestionCompleted);
 
   const [disabledIds, setDisabledIds] = React.useState<string[]>([]);
-  const [statsExpanded, setStatsExpanded] = React.useState<boolean>(true);
+
+  // Settings modal state
+  const [settingsVisible, setSettingsVisible] = React.useState(false);
+  const [loadVisible, setLoadVisible] = React.useState(false);
+  const [savedSlots, setSavedSlots] = React.useState<any[]>([]);
+  const [currentSaveId, setCurrentSaveId] = React.useState<string | null>(null);
+
+  const NEW_KEY = 'simslyfe-saves';
+  const NEW_CURRENT_KEY = 'simslyfe-current';
+
+  function makeId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  const readSaves = async () => {
+    try {
+      const raw = await AsyncStorage.getItem(NEW_KEY);
+      if (!raw) return [] as any[];
+      return JSON.parse(raw) as any[];
+    } catch (e) {
+      console.warn('readSaves failed', e);
+      return [] as any[];
+    }
+  };
+
+  const refreshSaves = async () => {
+    const arr = await readSaves();
+    setSavedSlots(arr || []);
+  };
+
+  const saveProfile = async () => {
+    try {
+      const id = makeId();
+      const st = useGameStore.getState();
+      const slot = { id, name: `Save ${new Date().toLocaleString()}`, state: st, profile: st.profile };
+      const arr = await readSaves();
+      arr.push(slot);
+      await AsyncStorage.setItem(NEW_KEY, JSON.stringify(arr));
+      await AsyncStorage.setItem(NEW_CURRENT_KEY, id);
+      setCurrentSaveId(id);
+      setSavedSlots(arr);
+      setSettingsVisible(false);
+      Toast.show({ type: 'success', text1: 'Game Saved', text2: 'Progress has been saved successfully' });
+    } catch (e) {
+      console.warn('save failed', e);
+      Toast.show({ type: 'error', text1: 'Save Failed', text2: 'Unable to save game progress' });
+    }
+  };
+
+  const loadProfile = async (slot: any) => {
+    try {
+      const st = useGameStore.getState();
+      Object.keys(slot.state).forEach(key => {
+        if (key in st) {
+          (st as any)[key] = slot.state[key];
+        }
+      });
+      await AsyncStorage.setItem(NEW_CURRENT_KEY, slot.id);
+      setCurrentSaveId(slot.id);
+      setLoadVisible(false);
+      Toast.show({ type: 'success', text1: 'Game Loaded', text2: 'Save file loaded successfully' });
+    } catch (e) {
+      console.warn('load failed', e);
+      Toast.show({ type: 'error', text1: 'Load Failed', text2: 'Unable to load save file' });
+    }
+  };
+
+  const deleteProfile = async (id: string) => {
+    Alert.alert('Delete Save', 'Are you sure you want to delete this save file? This action cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive', onPress: async () => {
+          try {
+            const arr = await readSaves();
+            const next = (arr || []).filter((x: any) => x.id !== id);
+            await AsyncStorage.setItem(NEW_KEY, JSON.stringify(next));
+            setSavedSlots(next);
+            const cur = await AsyncStorage.getItem(NEW_CURRENT_KEY);
+            if (cur === id) {
+              await AsyncStorage.removeItem(NEW_CURRENT_KEY);
+              setCurrentSaveId(null);
+            }
+          } catch (e) {
+            console.warn('delete failed', e);
+          }
+        }
+      }
+    ]);
+  };
+
+  // Initialize save system
+  React.useEffect(() => {
+    let mounted = true;
+    const init = async () => {
+      try {
+        const cur = await AsyncStorage.getItem(NEW_CURRENT_KEY);
+        if (!mounted) return;
+        if (cur) setCurrentSaveId(cur);
+      } catch (e) {
+        console.warn('load current id failed', e);
+      }
+      await refreshSaves();
+    };
+    init();
+    return () => { mounted = false; };
+  }, []);
+
+  // Setup autosave
+  React.useEffect(() => {
+    const autosaveCb = async () => {
+      if (!currentSaveId) return;
+      try {
+        const arr = await readSaves();
+        const idx = (arr || []).findIndex((x: any) => x.id === currentSaveId);
+        if (idx === -1) return;
+        const st = useGameStore.getState();
+        arr[idx] = { ...arr[idx], state: st, profile: st.profile };
+        await AsyncStorage.setItem(NEW_KEY, JSON.stringify(arr));
+        setSavedSlots(arr);
+      } catch (e) {
+        console.warn('autosave callback failed', e);
+      }
+    };
+
+    const setCb = useGameStore.getState().setAutosaveCallback;
+    setCb && setCb(autosaveCb);
+    return () => { setCb && setCb(null); };
+  }, [currentSaveId]);
 
   // generate a small set of random suggestions based on store state
   const suggestions: Suggestion[] = React.useMemo(() => {
@@ -152,7 +274,7 @@ export default function GameScreen({ route, navigation }: Props) {
         // call store actions
         const st = useGameStore.getState();
         if (base.title === 'Visit the Doctor') st.visitDoctor();
-        else if (base.title === 'Take a Part-time Job') st.takePartTimeJob();
+        else if (base.title === 'Take a Part-time Job') navigation.navigate('PartTimeJobs');
         else if (base.title === 'Invest in Stocks') st.investStocks();
         else if (base.title === 'Plan a Date') st.planDate();
         else if (base.title === 'Go to the Gym') st.goToGym();
@@ -183,9 +305,9 @@ export default function GameScreen({ route, navigation }: Props) {
           {!compact && <Text style={[styles.smallIconLabel, selectedNav === 'Home' && styles.smallIconLabelActive]}>Home</Text>}
         </TouchableOpacity>
 
-  <TouchableOpacity style={[styles.navItem, selectedNav === 'Career' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="Career" onPress={() => { setSelectedNav('Career'); navigation.navigate('Career'); }}>
-          <MaterialCommunityIcons name="briefcase-outline" size={22} color={selectedNav === 'Career' ? '#2ecc71' : '#fff'} />
-          {!compact && <Text style={[styles.smallIconLabel, selectedNav === 'Career' && styles.smallIconLabelActive]}>Career</Text>}
+  <TouchableOpacity style={[styles.navItem, selectedNav === 'Career' && styles.navItemActive, age < 18 && styles.navItemDisabled]} accessibilityRole="button" accessibilityLabel="Career" onPress={() => { if (age >= 18) { setSelectedNav('Career'); } else { Toast.show({ type: 'error', text1: 'Locked', text2: 'You must be 18 to access full-time career options.' }); } }}>
+          <MaterialCommunityIcons name="briefcase-outline" size={22} color={(selectedNav === 'Career' && age >= 18) ? '#2ecc71' : (age < 18 ? '#999' : '#fff')} />
+          {!compact && <Text style={[styles.smallIconLabel, (selectedNav === 'Career' && age >= 18) && styles.smallIconLabelActive, age < 18 && { color: '#999' }]}>Career</Text>}
         </TouchableOpacity>
 
   <TouchableOpacity style={[styles.navItem, selectedNav === 'Assets' && styles.navItemActive, age < 18 && styles.navItemDisabled]} accessibilityRole="button" accessibilityLabel="Assets" onPress={() => { if (age >= 18) { setSelectedNav('Assets'); } else { Toast.show({ type: 'error', text1: 'Locked', text2: 'You must be 18 to access assets.' }); } }}>
@@ -217,30 +339,34 @@ export default function GameScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.container}>
-  <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: computedPaddingBottom }]}>
-        <View style={styles.banner}>
-          <LinearGradient colors={["#f7fbff", "#e6f0fb"]} style={styles.bannerBackground} />
-          {avatarSource ? (
-            // keep image slightly zoomed but offset so it doesn't dominate
-            <Image source={avatarSource} style={styles.bannerImage} resizeMode="cover" />
-          ) : (
-            <View style={styles.bannerPlaceholder} />
-          )}
-          <View style={styles.inBannerLeft}><Text style={styles.goalRibbonText}>GOAL: SAVE FOR A HOUSE</Text></View>
-          <View style={styles.inBannerRight}><Text style={styles.bannerMoneyText}>{moneyFormatter.format(money)}</Text></View>
-        </View>
-
-        {/* Advance Year pill placed below the banner and above the actions */}
-        <View style={{ alignItems: 'center', marginTop: 12, marginBottom: 8 + insets.bottom, flexDirection: 'row', justifyContent: 'center', gap: 12 }}>
-          <TouchableOpacity style={styles.advancePillInline} onPress={advanceYear} accessibilityRole="button" accessibilityLabel="Advance year">
-            <MaterialCommunityIcons name="calendar-arrow-right" size={18} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.advanceLabel}>Advance Year</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={[styles.advancePillInline, { backgroundColor: '#2b8cff' }]} onPress={() => navigation.navigate('Education')} accessibilityRole="button" accessibilityLabel="Education">
-            <MaterialCommunityIcons name="school" size={18} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.advanceLabel}>Education</Text>
-          </TouchableOpacity>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: computedPaddingBottom }]}>
+        {/* Detailed profile card - Education and Actions */}
+        <View style={styles.profileCard}>
+          {/* Show education info if enrolled and age 3+ */}
+          {age >= 3 && isCurrentlyEnrolled && currentEnrollment && (() => {
+            const enrollment = currentEnrollment;
+            if (!enrollment) return null;
+            
+            const progress = enrollment.duration > 0 
+              ? ((enrollment.duration - (enrollment.timeRemaining ?? enrollment.duration)) / enrollment.duration) * 100 
+              : 0;
+            
+            const graduationYear = new Date().getFullYear() + Math.ceil(enrollment.timeRemaining ?? enrollment.duration ?? 0);
+            
+            return (
+              <EducationInfo
+                schoolName={enrollment.name}
+                yearsRemaining={Math.ceil(enrollment.timeRemaining ?? enrollment.duration ?? 0)}
+                progress={Math.round(progress)}
+                graduationDate={`${graduationYear}`}
+              />
+            );
+          })()}
+          
+          <ActionButtons
+            onAdvanceYear={advanceYear}
+            onEducation={() => navigation.navigate('Education')}
+          />
         </View>
 
         {(() => {
@@ -249,6 +375,8 @@ export default function GameScreen({ route, navigation }: Props) {
               return <SkillsPanel />;
             case 'Assets':
               return <AssetsScreen />;
+            case 'Career':
+              return <CareerScreen navigation={navigation} />;
             case 'Home':
             default:
               return (
@@ -291,64 +419,83 @@ export default function GameScreen({ route, navigation }: Props) {
   {/* spacer removed; paddingBottom handles safe spacing above the bottom nav */}
       </ScrollView>
 
-        <View
-          onLayout={(e) => {
-            const h = e.nativeEvent.layout.height;
-            if (h && h !== statsHeight) setStatsHeight(h);
-          }}
-          style={[
-            styles.statsCard,
-            statsExpanded ? styles.statsCardExpanded : [styles.statsCardCollapsed, styles.statsCardCollapsedExtraPad],
-            // position the stats card just above the app bottom nav using the measured navHeight
-            { bottom: statsBottomOffset },
-          ]}
-        >
-        <View style={styles.statsHeaderRow}>
-          <Text style={styles.statsHeaderTitle}>Stats</Text>
-          <TouchableOpacity onPress={() => setStatsExpanded((s) => !s)} style={styles.statsToggle}>
-            <Text style={styles.statsToggleText}>{statsExpanded ? 'Collapse' : 'Expand'}</Text>
+      {/* Stats removed - now shown in Profile modal via AppShell */}
+
+      {/* Settings Modal */}
+      <Modal visible={settingsVisible} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Settings</Text>
+          <TouchableOpacity style={styles.modalButton} onPress={saveProfile}>
+            <MaterialCommunityIcons name="content-save" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.modalButtonText}>Save Game</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.modalButton} onPress={() => { setLoadVisible(true); setSettingsVisible(false); }}>
+            <MaterialCommunityIcons name="folder-open" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.modalButtonText}>Load Game</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.modalButton, styles.modalCloseButton]} onPress={() => setSettingsVisible(false)}>
+            <Text style={[styles.modalButtonText, styles.modalCloseButtonText]}>Close</Text>
           </TouchableOpacity>
         </View>
-        {statsExpanded ? (
-          <>
-            <StatBar label="Happiness" value={happiness ?? 0} color="#f6c85f" />
-            <StatBar label="Health" value={health ?? 0} color="#ff6b6b" />
-            <StatBar label="Smarts" value={smarts ?? 0} color="#6be3ff" />
-            <StatBar label="Looks" value={looks ?? 0} color="#ff8a65" />
-            <StatBar label="Fame" value={fame ?? 0} color="#ffcc00" />
-          </>
-        ) : (
-          <View style={styles.statsCompactRow}>
-            <View style={styles.statsCompactItem}>
-              <Text style={styles.statsCompactLabel}>Happiness</Text>
-              <Text style={styles.statsCompactValue}>{happiness ?? 0}%</Text>
-            </View>
-            <View style={styles.statsCompactItem}>
-              <Text style={styles.statsCompactLabel}>Health</Text>
-              <Text style={styles.statsCompactValue}>{health ?? 0}%</Text>
-            </View>
-            <View style={styles.statsCompactItem}>
-              <Text style={styles.statsCompactLabel}>Smarts</Text>
-              <Text style={styles.statsCompactValue}>{smarts ?? 0}%</Text>
-            </View>
-            <View style={styles.statsCompactItem}>
-              <Text style={styles.statsCompactLabel}>Looks</Text>
-              <Text style={styles.statsCompactValue}>{looks ?? 0}%</Text>
-            </View>
-            <View style={styles.statsCompactItem}>
-              <Text style={styles.statsCompactLabel}>Fame</Text>
-              <Text style={styles.statsCompactValue}>{fame ?? 0}%</Text>
-            </View>
-          </View>
-        )}
-  </View>
-      {/* debug overlay removed */}
+      </Modal>
+
+      {/* Load Game Modal */}
+      <Modal visible={loadVisible} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Load Game</Text>
+          <TouchableOpacity style={styles.modalButton} onPress={refreshSaves}>
+            <MaterialCommunityIcons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.modalButtonText}>Refresh Saves</Text>
+          </TouchableOpacity>
+          <ScrollView style={styles.savesList}>
+            {savedSlots.length === 0 ? (
+              <Text style={styles.noSavesText}>No saved games found</Text>
+            ) : (
+              savedSlots.map((slot: any) => (
+                <View key={slot.id} style={styles.saveSlot}>
+                  <View style={styles.saveSlotInfo}>
+                    <Text style={styles.saveSlotName}>{slot.name}</Text>
+                    {slot.profile && (
+                      <Text style={styles.saveSlotMeta}>
+                        {slot.profile.firstName} - Age {slot.state?.age || 0}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={styles.saveSlotButtons}>
+                    <TouchableOpacity style={styles.loadButton} onPress={() => loadProfile(slot)}>
+                      <Text style={styles.loadButtonText}>Load</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.deleteButton} onPress={() => deleteProfile(slot.id)}>
+                      <Text style={styles.deleteButtonText}>Delete</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            )}
+          </ScrollView>
+          <TouchableOpacity style={[styles.modalButton, styles.modalCloseButton]} onPress={() => setLoadVisible(false)}>
+            <Text style={[styles.modalButtonText, styles.modalCloseButtonText]}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f2f4f7' },
+  profileCard: { 
+    backgroundColor: '#fff', 
+    borderRadius: 16, 
+    marginHorizontal: 12,
+    marginTop: 12,
+    paddingVertical: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
   statusBar: { height: 84, backgroundColor: '#1f3b4d', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   statusLeft: { flexDirection: 'row', alignItems: 'center' },
   statusAvatar: { width: 56, height: 56, borderRadius: 28, marginRight: 10 },
@@ -366,21 +513,6 @@ const styles = StyleSheet.create({
   gameStatText: { color: '#fff', fontWeight: '700' },
 
   scrollContent: { padding: 12, paddingBottom: 12 },
-  banner: { height: 150, backgroundColor: '#e6eef6', borderRadius: 12, overflow: 'hidden', justifyContent: 'center' },
-  bannerBackground: { ...StyleSheet.absoluteFillObject },
-  bannerImage: { width: '120%', height: '120%', position: 'absolute', right: -30, bottom: -10 },
-  bannerPlaceholder: { flex: 1, backgroundColor: '#cfdce6' },
-  goalPill: { position: 'absolute', left: 12, top: 12, backgroundColor: '#ffc107', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, elevation: 2 },
-  goalText: { fontWeight: '700', fontSize: 12 },
-  // New ribbon under the banner
-  goalRibbon: { marginTop: 10, alignSelf: 'flex-start', backgroundColor: '#ffc107', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
-  goalRibbonText: { fontWeight: '800' },
-  // banner internal overlays
-  inBannerLeft: { position: 'absolute', left: 12, bottom: 12, backgroundColor: '#ffc107', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14 },
-  inBannerRight: { position: 'absolute', right: 12, bottom: 12, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14 },
-  moneyBubble: { position: 'absolute', right: 12, bottom: 16, backgroundColor: '#4b5563', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 18, elevation: 3 },
-  bannerMoneyText: { color: '#fff', fontWeight: '700' },
-
   actionsRow: { marginTop: 12 },
   sectionTitle: { fontWeight: '700' },
   toast: { position: 'absolute', left: '50%', transform: [{ translateX: -100 }], bottom: 160, backgroundColor: 'rgba(0,0,0,0.8)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
@@ -388,20 +520,6 @@ const styles = StyleSheet.create({
 
   logSection: { marginTop: 14 },
   logCard: { marginTop: 8, backgroundColor: '#fff', borderRadius: 10, padding: 10, minHeight: 120, maxHeight: 620, overflow: 'hidden' },
-
-  statsCard: { position: 'absolute', left: 12, right: 12, bottom: 12, backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 12, padding: 12, zIndex: 100, elevation: 10 },
-  statsCardExpanded: { paddingBottom: 16 },
-  statsCardCollapsed: { paddingVertical: 8 },
-  statsHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  statsHeaderTitle: { fontWeight: '700' },
-  statsToggle: { paddingHorizontal: 8, paddingVertical: 4 },
-  statsToggleText: { color: '#2b8cff', fontWeight: '700' },
-  statsCompactRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
-  statsCompactItem: { alignItems: 'center', flex: 1, paddingHorizontal: 6 },
-  statsCompactLabel: { color: '#6b7280', fontSize: 12, textAlign: 'center' },
-  statsCompactValue: { fontWeight: '800', fontSize: 18, marginTop: 4, textAlign: 'center' },
-  // give extra bottom padding so the big age button doesn't overlap collapsed values
-  statsCardCollapsedExtraPad: { paddingBottom: 36 },
 
   bottomBar: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 86, backgroundColor: '#12323e', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12 },
   bottomLeftIcons: { flexDirection: 'row', alignItems: 'center' },
@@ -420,6 +538,67 @@ const styles = StyleSheet.create({
   advanceButton: { backgroundColor: '#2ecc71', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 28, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   advanceLabel: { color: '#fff', fontWeight: '700' },
   moreIcon: { marginLeft: 8, padding: 8 },
-  advancePillInline: { backgroundColor: '#2ecc71', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   bottomCenterSpacer: { width: 140 },
+  
+  // Modal styles
+  modalContent: { flex: 1, padding: 20, backgroundColor: '#fff', paddingTop: 60 },
+  modalTitle: { fontSize: 28, fontWeight: '700', marginBottom: 24, textAlign: 'center', color: '#111827' },
+  modalButton: { 
+    backgroundColor: '#3b82f6', 
+    padding: 16, 
+    borderRadius: 12, 
+    marginBottom: 12, 
+    flexDirection: 'row',
+    alignItems: 'center', 
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  modalButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  modalCloseButton: { backgroundColor: '#f3f4f6', marginTop: 12 },
+  modalCloseButtonText: { color: '#374151' },
+  savesList: { flex: 1, marginBottom: 16 },
+  noSavesText: { textAlign: 'center', color: '#6b7280', fontSize: 16, marginTop: 20 },
+  saveSlot: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    padding: 16, 
+    backgroundColor: '#f9fafb', 
+    borderRadius: 12, 
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  saveSlotInfo: { flex: 1, marginRight: 12 },
+  saveSlotName: { fontSize: 16, fontWeight: '600', color: '#111827', marginBottom: 4 },
+  saveSlotMeta: { fontSize: 14, color: '#6b7280' },
+  saveSlotButtons: { flexDirection: 'row', gap: 8 },
+  loadButton: { 
+    backgroundColor: '#10b981', 
+    paddingHorizontal: 16, 
+    paddingVertical: 8, 
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  loadButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  deleteButton: { 
+    backgroundColor: '#ef4444', 
+    paddingHorizontal: 16, 
+    paddingVertical: 8, 
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  deleteButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
 });

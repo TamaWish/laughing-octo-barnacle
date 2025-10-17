@@ -23,8 +23,52 @@ export default function EducationScreen({ navigation, route }: Props) {
   const expandedActivities = useGameStore((s) => s.expandedActivities);
   const setExpandedActivity = useGameStore((s) => s.setExpandedActivity);
   const enrollCourse = useGameStore((s) => s.enrollCourse);
+  const completedDegrees = useGameStore((s) => s.completedDegrees);
+  const completedCertificates = useGameStore((s) => s.completedCertificates);
+  const educationStatus = useGameStore((s) => s.educationStatus);
   const [confirmVisible, setConfirmVisible] = React.useState(false);
   const [selectedCourse, setSelectedCourse] = React.useState<any | null>(null);
+
+  // Helper function to check if a course is completed
+  const isCourseCompleted = (course: any) => {
+    return completedDegrees?.includes(course.name) || completedCertificates?.includes(course.id);
+  };
+
+  // Helper function to check if prerequisites are met
+  const arePrerequisitesMet = (course: any) => {
+    // Check education status requirement
+    if (typeof course.requiredStatus === 'number' && educationStatus < course.requiredStatus) {
+      return false;
+    }
+    // Check age requirement
+    if (typeof course.requiredAge === 'number' && useGameStore.getState().age < course.requiredAge) {
+      return false;
+    }
+    // Check skill prerequisites
+    if (course.preReqs && course.preReqs.requiredSkill) {
+      const skill = course.preReqs.requiredSkill;
+      const required = course.preReqs.value || 0;
+      const currentValue = (useGameStore.getState() as any)[skill] || 0;
+      if (currentValue < required) {
+        return false;
+      }
+    }
+    // Check required exams
+    if (course.requiredExam) {
+      const passed = profile && Array.isArray((profile as any).passedExams) && ((profile as any).passedExams as string[]).includes(course.requiredExam);
+      if (!passed) {
+        return false;
+      }
+    }
+    // Check work experience
+    if (typeof course.requiredWorkYears === 'number') {
+      const years = (profile as any)?.yearsWorked ?? 0;
+      if (years < course.requiredWorkYears) {
+        return false;
+      }
+    }
+    return true;
+  };
 
   return (
     <View style={styles.container}>
@@ -50,22 +94,36 @@ export default function EducationScreen({ navigation, route }: Props) {
                 {expandedActivities?.[o.id] ? (
                   <View style={{ marginTop: 10 }}>
                     {/* Use the country-specific courses map */}
-                    {courses[o.id]?.map((course: any) => (
-                      <View key={course.id} style={styles.courseRow}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.courseName}>{course.name} <Text style={styles.courseType}>[{course.type}]</Text></Text>
-                          <Text style={styles.courseDesc}>{course.description}</Text>
-                          <Text style={styles.courseMeta}>
-                            Duration: {course.duration} yr • Cost: {formatCurrency(course.cost)}
-                            {course.requiredExam ? ` • Exam: ${course.requiredExam}` : ''}
-                            {course.requiredStatus ? ` • Status: ${course.requiredStatus}` : ''}
-                          </Text>
+                    {courses[o.id]?.map((course: any) => {
+                      const completed = isCourseCompleted(course);
+                      const prereqsMet = arePrerequisitesMet(course);
+                      const canEnroll = !completed && prereqsMet;
+                      
+                      return (
+                        <View key={course.id} style={[styles.courseRow, completed && styles.completedCourseRow]}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.courseName, completed && styles.completedText]}>{course.name} <Text style={[styles.courseType, completed && styles.completedText]}>[{course.type}]</Text></Text>
+                            <Text style={[styles.courseDesc, completed && styles.completedText]}>{course.description}</Text>
+                            <Text style={[styles.courseMeta, completed && styles.completedText]}>
+                              Duration: {course.duration} yr • Cost: {formatCurrency(course.cost)}
+                              {course.requiredExam ? ` • Exam: ${course.requiredExam}` : ''}
+                              {course.requiredStatus ? ` • Status: ${course.requiredStatus}` : ''}
+                            </Text>
+                            {completed && <Text style={styles.completedLabel}>✓ Completed</Text>}
+                            {!prereqsMet && !completed && <Text style={styles.prereqLabel}>Prerequisites not met</Text>}
+                          </View>
+                          <TouchableOpacity 
+                            style={[styles.enrollButton, (!canEnroll) && styles.disabledButton]} 
+                            onPress={() => canEnroll && setSelectedCourse(course)}
+                            disabled={!canEnroll}
+                          >
+                            <Text style={[styles.enrollText, (!canEnroll) && styles.disabledText]}>
+                              {completed ? 'Completed' : 'Enroll'}
+                            </Text>
+                          </TouchableOpacity>
                         </View>
-                        <TouchableOpacity style={styles.enrollButton} onPress={() => { setSelectedCourse(course); setConfirmVisible(true); }}>
-                          <Text style={styles.enrollText}>Enroll</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ))}
+                      );
+                    })}
                   </View>
                 ) : null}
               </View>
@@ -137,12 +195,18 @@ const styles = StyleSheet.create({
 
   // course list styles
   courseRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#f0f2f4' },
+  completedCourseRow: { opacity: 0.6 },
   courseName: { fontWeight: '800' },
   courseType: { fontWeight: '600', color: '#6b7280', fontSize: 12 },
   courseDesc: { color: '#6b7280', fontSize: 12, marginTop: 2 },
   courseMeta: { color: '#93a3ad', fontSize: 12, marginTop: 4 },
+  completedText: { color: '#888', textDecorationLine: 'line-through' },
+  completedLabel: { color: '#28a745', fontSize: 12, fontWeight: '600', marginTop: 4 },
+  prereqLabel: { color: '#dc3545', fontSize: 12, fontWeight: '600', marginTop: 4 },
   enrollButton: { backgroundColor: '#2b8cff', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, marginLeft: 12 },
+  disabledButton: { backgroundColor: '#ccc' },
   enrollText: { color: '#fff', fontWeight: '700' },
+  disabledText: { color: '#666' },
 
   bottomBar: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 86, backgroundColor: '#12323e', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12 },
   navRow: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingHorizontal: 8 },

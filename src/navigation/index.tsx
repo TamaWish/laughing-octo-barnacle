@@ -19,6 +19,9 @@ export type RootStackParamList = {
   Load: undefined;
   Relationships: undefined;
   Career: undefined;
+  FindJob: undefined;
+  FreelanceGigs: undefined;
+  PartTimeJobs: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -36,6 +39,9 @@ export default function AppNavigator() {
         <Stack.Screen name="Load" component={/* lazy */ (require('../screens/system/LoadGameScreen').default)} />
         <Stack.Screen name="Game" component={/* lazy */ (require('../screens/wrappers/GameWrapped').default)} />
         <Stack.Screen name="Career" component={/* lazy */ (require('../screens/wrappers/CareerWrapped').default)} />
+        <Stack.Screen name="FindJob" component={/* lazy */ (require('../screens/wrappers/FindJobWrapped').default)} />
+        <Stack.Screen name="FreelanceGigs" component={/* lazy */ (require('../screens/wrappers/FreelanceGigsWrapped').default)} />
+        <Stack.Screen name="PartTimeJobs" component={/* lazy */ (require('../screens/wrappers/PartTimeJobsWrapped').default)} />
         <Stack.Screen name="Relationships" component={/* lazy */ (require('../screens/wrappers/RelationshipsWrapped').default)} />
       </Stack.Navigator>
     </NavigationContainer>

@@ -22,8 +22,8 @@ import Toast from 'react-native-toast-message';
 import EventLog from '../components/EventLog';
 import StatBar from '../components/StatBar';
 import ActionCard from '../components/ActionCard';
-import CareerPanel from '../components/CareerPanel';
 import SkillsPanel from '../components/SkillsPanel';
+import AssetsScreen from './AssetsScreen';
 import { Profile } from '../types/profile';
 import { characters, resolveAvatar } from '../constants/characters';
 
@@ -183,12 +183,12 @@ export default function GameScreen({ route, navigation }: Props) {
           {!compact && <Text style={[styles.smallIconLabel, selectedNav === 'Home' && styles.smallIconLabelActive]}>Home</Text>}
         </TouchableOpacity>
 
-  <TouchableOpacity style={[styles.navItem, selectedNav === 'Career' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="Career" onPress={() => { setSelectedNav('Career'); }}>
+  <TouchableOpacity style={[styles.navItem, selectedNav === 'Career' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="Career" onPress={() => { setSelectedNav('Career'); navigation.navigate('Career'); }}>
           <MaterialCommunityIcons name="briefcase-outline" size={22} color={selectedNav === 'Career' ? '#2ecc71' : '#fff'} />
           {!compact && <Text style={[styles.smallIconLabel, selectedNav === 'Career' && styles.smallIconLabelActive]}>Career</Text>}
         </TouchableOpacity>
 
-  <TouchableOpacity style={[styles.navItem, selectedNav === 'Assets' && styles.navItemActive, age < 18 && styles.navItemDisabled]} accessibilityRole="button" accessibilityLabel="Assets" onPress={() => { if (age >= 18) { setSelectedNav('Assets'); navigation.navigate('Assets'); } else { Toast.show({ type: 'error', text1: 'Locked', text2: 'You must be 18 to access assets.' }); } }}>
+  <TouchableOpacity style={[styles.navItem, selectedNav === 'Assets' && styles.navItemActive, age < 18 && styles.navItemDisabled]} accessibilityRole="button" accessibilityLabel="Assets" onPress={() => { if (age >= 18) { setSelectedNav('Assets'); } else { Toast.show({ type: 'error', text1: 'Locked', text2: 'You must be 18 to access assets.' }); } }}>
           <MaterialCommunityIcons name="wallet-outline" size={22} color={(selectedNav === 'Assets' && age >= 18) ? '#2ecc71' : (age < 18 ? '#999' : '#fff')} />
           {!compact && <Text style={[styles.smallIconLabel, (selectedNav === 'Assets' && age >= 18) && styles.smallIconLabelActive, age < 18 && { color: '#999' }]}>Assets</Text>}
         </TouchableOpacity>
@@ -245,10 +245,10 @@ export default function GameScreen({ route, navigation }: Props) {
 
         {(() => {
           switch (selectedNav) {
-            case 'Career':
-              return <CareerPanel />;
             case 'Skills':
               return <SkillsPanel />;
+            case 'Assets':
+              return <AssetsScreen />;
             case 'Home':
             default:
               return (

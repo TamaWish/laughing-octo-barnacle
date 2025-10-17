@@ -158,7 +158,18 @@ const useGameStore = create<GameState>()(
                 }
               }
             }
-            // show toast with stat deltas
+            // auto-enroll in secondary school at the country's start age if educationStatus >= 1 and not enrolled
+            if (get().educationStatus >= 1 && !get().isCurrentlyEnrolled && get().profile?.country) {
+              const countryCode = get().profile!.country;
+              const catalog = COUNTRY_EDUCATION_MAP[countryCode];
+              if (catalog && catalog.courses.secondary) {
+                const secondaryCourse = catalog.courses.secondary[0];
+                if (secondaryCourse && newAge === secondaryCourse.requiredAge) {
+                  get().enrollCourse(secondaryCourse);
+                  get().addEvent(`Auto-enrolled in ${secondaryCourse.name} at age ${newAge}.`);
+                }
+              }
+            }
             const next = get();
             const deltas = [] as string[];
             const hD = (next.health ?? 0) - (prev.health ?? 0);
@@ -357,20 +368,6 @@ const useGameStore = create<GameState>()(
         get().addEvent(`Education status updated to ${grant} after completing ${completedCourse.name}.`);
       }
       Toast.show({ type: 'success', text1: 'Graduation', text2: `Completed ${completedCourse.name}!` });
-    }
-    // auto-enroll in secondary if just completed primary
-    if (completedCourse.id?.includes('primary')) {
-      const countryCode = get().profile?.country;
-      if (countryCode) {
-        const catalog = COUNTRY_EDUCATION_MAP[countryCode];
-        if (catalog && catalog.courses.secondary) {
-          const secondaryCourse = catalog.courses.secondary[0];
-          if (secondaryCourse && get().age === secondaryCourse.requiredAge) {
-            get().enrollCourse(secondaryCourse);
-            get().addEvent(`Auto-enrolled in ${secondaryCourse.name} after completing primary.`);
-          }
-        }
-      }
     }
     // clear enrollment
     set(() => ({ isCurrentlyEnrolled: false, currentEnrollment: null }));

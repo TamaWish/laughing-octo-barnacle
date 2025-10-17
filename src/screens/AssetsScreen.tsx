@@ -25,22 +25,59 @@ const AssetsScreen = () => {
     );
   };
 
+  const renderSectionHeader = ({ section: { title } }: any) => (
+    <Text style={styles.sectionTitle}>{title}</Text>
+  );
+
+  // Group available assets by type
+  const availableSections = [
+    { title: 'Cars', data: ASSET_CATALOG.filter(a => a.type === 'Car') },
+    { title: 'Houses', data: ASSET_CATALOG.filter(a => a.type === 'House') },
+    { title: 'Businesses', data: ASSET_CATALOG.filter(a => a.type === 'Business') },
+  ].filter(section => section.data.length > 0);
+
+  // Group owned assets by type
+  const ownedSections = [
+    { title: 'Your Cars', data: assets.filter(a => a.type === 'Car') },
+    { title: 'Your Houses', data: assets.filter(a => a.type === 'House') },
+    { title: 'Your Businesses', data: assets.filter(a => a.type === 'Business') },
+  ].filter(section => section.data.length > 0);
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Assets</Text>
       <Text style={styles.money}>Your Money: ${money}</Text>
-      <FlatList
-        data={ASSET_CATALOG}
-        renderItem={renderAsset}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={<Text style={styles.sectionTitle}>Available for Purchase</Text>}
-      />
-      <FlatList
-        data={assets}
-        renderItem={renderAsset}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={<Text style={styles.sectionTitle}>Your Assets</Text>}
-      />
+      
+      <Text style={styles.mainSectionTitle}>Available for Purchase</Text>
+      
+      {availableSections.map((section) => (
+        <View key={section.title}>
+          <Text style={styles.sectionTitle}>{section.title}</Text>
+          <FlatList
+            data={section.data}
+            renderItem={renderAsset}
+            keyExtractor={(item: Asset) => item.id}
+            scrollEnabled={false}
+          />
+        </View>
+      ))}
+      
+      {ownedSections.length > 0 && (
+        <>
+          <Text style={styles.mainSectionTitle}>Your Assets</Text>
+          {ownedSections.map((section) => (
+            <View key={section.title}>
+              <Text style={styles.sectionTitle}>{section.title}</Text>
+              <FlatList
+                data={section.data}
+                renderItem={renderAsset}
+                keyExtractor={(item: Asset) => item.id}
+                scrollEnabled={false}
+              />
+            </View>
+          ))}
+        </>
+      )}
     </View>
   );
 };
@@ -58,6 +95,12 @@ const styles = StyleSheet.create({
   money: {
     fontSize: 18,
     marginBottom: 16,
+  },
+  mainSectionTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginTop: 24,
+    marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 20,

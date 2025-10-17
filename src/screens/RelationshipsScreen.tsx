@@ -3,10 +3,11 @@ import { View, Text, StyleSheet, Image, TouchableOpacity, Modal, Button } from '
 import useGameStore from '../store/gameStore';
 import { Profile } from '../types/profile';
 import { characters, resolveAvatar } from '../constants/characters';
+import AppShell from '../components/AppShell';
 
 const FIRST_NAMES = ['Alex','Sam','Taylor','Jordan','Casey','Riley','Jamie','Morgan','Charlie','Avery','Quinn','Dakota','Parker','Rowan','Sydney','Elliot'];
 
-export default function RelationshipsPanel() {
+function RelationshipsScreen() {
   const profile = useGameStore((s) => s.profile);
   const [childrenExpanded, setChildrenExpanded] = React.useState(false);
   const [selectedMember, setSelectedMember] = React.useState<any | null>(null);
@@ -64,7 +65,6 @@ export default function RelationshipsPanel() {
       </View>
 
       <View style={[styles.card, { marginTop: 8 }]}>
-        <Text style={{ fontWeight: '700', marginBottom: 8 }}>Family</Text>
         <Text style={{ fontWeight: '600', marginTop: 4 }}>Parents</Text>
         {parents.length === 0 ? <Text style={{ color: '#666' }}>No parents found.</Text> : parents.map(renderMember)}
         <Text style={{ fontWeight: '600', marginTop: 8 }}>Siblings</Text>
@@ -166,8 +166,16 @@ export default function RelationshipsPanel() {
   );
 }
 
+export default function RelationshipsScreenWrapped() {
+  return (
+    <AppShell>
+      <RelationshipsScreen />
+    </AppShell>
+  );
+}
+
 const styles = StyleSheet.create({
-  actionsRow: { marginTop: 12 },
-  sectionTitle: { fontWeight: '700' },
+  actionsRow: { marginTop: 12, paddingHorizontal: 12 },
+  sectionTitle: { fontWeight: '700', fontSize: 22, marginBottom: 8 },
   card: { width: '100%', backgroundColor: '#fff', padding: 12, borderRadius: 10, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
 });

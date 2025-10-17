@@ -15,7 +15,9 @@ export type RootStackParamList = {
   Game: { profile?: Profile; initialTab?: TabKey } | undefined;
   Education: undefined;
   Activities: undefined;
+  Assets: undefined;
   Load: undefined;
+  Relationships: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -27,10 +29,12 @@ export default function AppNavigator() {
         <Stack.Screen name="Loading" component={/* lazy */ (require('../screens/system/LoadingScreen').default)} />
         <Stack.Screen name="Landing" component={/* lazy */ (require('../screens/system/LandingScreen').default)} />
         <Stack.Screen name="Home" component={/* lazy */ (require('../screens/system/HomeScreen').default)} />
-  <Stack.Screen name="Activities" component={/* lazy */ (require('../screens/wrappers/ActivitiesWrapped').default)} />
-  <Stack.Screen name="Education" component={/* lazy */ (require('../screens/wrappers/EducationWrapped').default)} />
+        <Stack.Screen name="Activities" component={/* lazy */ (require('../screens/wrappers/ActivitiesWrapped').default)} />
+        <Stack.Screen name="Education" component={/* lazy */ (require('../screens/wrappers/EducationWrapped').default)} />
+        <Stack.Screen name="Assets" component={/* lazy */ (require('../screens/AssetsScreen').default)} />
         <Stack.Screen name="Load" component={/* lazy */ (require('../screens/system/LoadGameScreen').default)} />
-  <Stack.Screen name="Game" component={/* lazy */ (require('../screens/wrappers/GameWrapped').default)} />
+        <Stack.Screen name="Relationships" component={/* lazy */ (require('../screens/RelationshipsScreen').default)} />
+        <Stack.Screen name="Game" component={/* lazy */ (require('../screens/wrappers/GameWrapped').default)} />
       </Stack.Navigator>
     </NavigationContainer>
   );

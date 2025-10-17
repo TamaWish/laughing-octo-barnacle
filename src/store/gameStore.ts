@@ -3,6 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
 import { Profile } from '../types/profile';
+import { Asset } from '../types/assets';
+import { LIFE_EVENTS } from '../constants/events';
 import { Course, Enrollment } from './types/education';
 import { COUNTRY_EDUCATION_MAP } from './educationCatalog';
 import { TabKey } from '../navigation';
@@ -58,6 +60,10 @@ type GameState = {
   // Relationship actions
   spendTimewithFamilyMember: (memberId: string) => void;
   giveGiftToFamilyMember: (memberId: string, cost: number) => void;
+  // Asset actions
+  assets: Asset[];
+  buyAsset: (asset: Asset) => void;
+  sellAsset: (asset: Asset) => void;
 };
 
 const useGameStore = create<GameState>()(
@@ -103,6 +109,17 @@ const useGameStore = create<GameState>()(
             const healthLoss = -1 * (Math.floor(Math.random() * 3) + 1); // -1 to -3
             const happyDelta = Math.floor(Math.random() * 3) - 1; // -1..+1
             const prev = get();
+
+            let incomeFromAssets = 0;
+            let maintenanceCosts = 0;
+            prev.assets.forEach(asset => {
+              if (asset.type === 'Business') {
+                incomeFromAssets += (asset as any).incomePerYear || 0;
+              } else if (asset.type === 'House') {
+                maintenanceCosts += (asset as any).maintenanceCost || 0;
+              }
+            });
+
             set((s) => {
               const cur = new Date(s.gameDate || new Date().toISOString());
               const next = new Date(cur);
@@ -111,7 +128,7 @@ const useGameStore = create<GameState>()(
               const clamp = (v: number) => Math.max(0, Math.min(100, v));
               return {
                 age: s.age + 1,
-                money: s.money + delta,
+                money: s.money + delta + incomeFromAssets - maintenanceCosts,
                 gameDate: next.toISOString(),
                 health: clamp((s.health ?? 70) + healthLoss),
                 happiness: clamp((s.happiness ?? 50) + happyDelta),
@@ -185,6 +202,24 @@ const useGameStore = create<GameState>()(
             // call autosave callback when available
             const cb = (get() as any).autosaveCallback;
             if (cb) cb();
+
+            // Handle random life events
+            if (Math.random() < 0.2) { // 20% chance of a random event
+              const event = LIFE_EVENTS[Math.floor(Math.random() * LIFE_EVENTS.length)];
+              get().addEvent(event.description);
+              set((s) => {
+                const clamp = (v: number) => Math.max(0, Math.min(100, v));
+                return {
+                  health: clamp((s.health ?? 70) + (event.effects.health || 0)),
+                  happiness: clamp((s.happiness ?? 50) + (event.effects.happiness || 0)),
+                  smarts: clamp((s.smarts ?? 50) + (event.effects.smarts || 0)),
+                  looks: clamp((s.looks ?? 50) + (event.effects.looks || 0)),
+                  fame: clamp((s.fame ?? 0) + (event.effects.fame || 0)),
+                  money: s.money + (event.effects.money || 0),
+                };
+              });
+              Toast.show({ type: 'info', text1: 'A life event occurred!', text2: event.description });
+            }
       },
 
   // enroll a Sim in a course after performing checks
@@ -530,7 +565,34 @@ const useGameStore = create<GameState>()(
     });
     get().addEvent(`Gave a gift to ${memberName}. Relationship +10, Money -${cost}.`);
   },
-    }),
+  assets: [],
+  buyAsset: (asset: Asset) => {
+    const state = get();
+    if (state.money < asset.cost) {
+      Toast.show({ type: 'error', text1: 'Purchase failed', text2: 'Not enough money.' });
+      return;
+    }
+    if (asset.requiredAge && state.age < asset.requiredAge) {
+      Toast.show({ type: 'error', text1: 'Purchase failed', text2: `You must be at least ${asset.requiredAge} to buy this.` });
+      return;
+    }
+    set((s) => ({
+      money: s.money - asset.cost,
+      assets: [...s.assets, asset],
+      happiness: s.happiness + (asset.happinessBoost || 0),
+    }));
+    get().addEvent(`Purchased ${asset.name} for $${asset.cost}.`);
+    Toast.show({ type: 'success', text1: 'Purchase successful', text2: `You bought a ${asset.name}.` });
+  },
+  sellAsset: (asset: Asset) => {
+    set((s) => ({
+      money: s.money + asset.resaleValue,
+      assets: s.assets.filter((a) => a.id !== asset.id),
+    }));
+    get().addEvent(`Sold ${asset.name} for $${asset.resaleValue}.`);
+    Toast.show({ type: 'info', text1: 'Asset sold', text2: `You sold your ${asset.name}.` });
+    },
+  }),
   { name: 'simslyfe-storage', storage: createJSONStorage(() => AsyncStorage) }
   )
 );

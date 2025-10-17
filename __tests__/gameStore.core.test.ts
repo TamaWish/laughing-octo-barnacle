@@ -39,8 +39,12 @@ describe('gameStore core logic', () => {
       const { health, happiness } = useGameStore.getState();
       useGameStore.getState().advanceYear();
       // Health is expected to decrease, happiness can fluctuate
-      expect(useGameStore.getState().health).toBeLessThan(health);
-      expect(useGameStore.getState().happiness).not.toBe(happiness);
+      const newHealth = useGameStore.getState().health;
+      const newHappiness = useGameStore.getState().happiness;
+      expect(newHealth).toBeLessThan(health);
+      // Happiness can now stay the same, so we check if it's within a plausible range
+      expect(newHappiness).toBeGreaterThanOrEqual(happiness - 1);
+      expect(newHappiness).toBeLessThanOrEqual(happiness + 1);
     });
 
     it('should add a new event to the eventLog', () => {

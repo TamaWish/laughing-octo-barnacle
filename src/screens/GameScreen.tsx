@@ -20,9 +20,10 @@ import { RootStackParamList, TabKey } from '../navigation';
 import useGameStore from '../store/gameStore';
 import Toast from 'react-native-toast-message';
 import EventLog from '../components/EventLog';
-import RelationshipsPanel from '../components/RelationshipsPanel';
 import StatBar from '../components/StatBar';
 import ActionCard from '../components/ActionCard';
+import CareerPanel from '../components/CareerPanel';
+import SkillsPanel from '../components/SkillsPanel';
 import { Profile } from '../types/profile';
 import { characters, resolveAvatar } from '../constants/characters';
 
@@ -187,9 +188,9 @@ export default function GameScreen({ route, navigation }: Props) {
           {!compact && <Text style={[styles.smallIconLabel, selectedNav === 'Career' && styles.smallIconLabelActive]}>Career</Text>}
         </TouchableOpacity>
 
-  <TouchableOpacity style={[styles.navItem, selectedNav === 'Assets' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="Assets" onPress={() => { setSelectedNav('Assets'); }}>
-          <MaterialCommunityIcons name="wallet-outline" size={22} color={selectedNav === 'Assets' ? '#2ecc71' : '#fff'} />
-          {!compact && <Text style={[styles.smallIconLabel, selectedNav === 'Assets' && styles.smallIconLabelActive]}>Assets</Text>}
+  <TouchableOpacity style={[styles.navItem, selectedNav === 'Assets' && styles.navItemActive, age < 18 && styles.navItemDisabled]} accessibilityRole="button" accessibilityLabel="Assets" onPress={() => { if (age >= 18) { setSelectedNav('Assets'); navigation.navigate('Assets'); } else { Toast.show({ type: 'error', text1: 'Locked', text2: 'You must be 18 to access assets.' }); } }}>
+          <MaterialCommunityIcons name="wallet-outline" size={22} color={(selectedNav === 'Assets' && age >= 18) ? '#2ecc71' : (age < 18 ? '#999' : '#fff')} />
+          {!compact && <Text style={[styles.smallIconLabel, (selectedNav === 'Assets' && age >= 18) && styles.smallIconLabelActive, age < 18 && { color: '#999' }]}>Assets</Text>}
         </TouchableOpacity>
 
   <TouchableOpacity style={[styles.navItem, selectedNav === 'Skills' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="Skills" onPress={() => { setSelectedNav('Skills'); }}>
@@ -197,7 +198,7 @@ export default function GameScreen({ route, navigation }: Props) {
           {!compact && <Text style={[styles.smallIconLabel, selectedNav === 'Skills' && styles.smallIconLabelActive]}>Skills</Text>}
         </TouchableOpacity>
 
-  <TouchableOpacity style={[styles.navItem, selectedNav === 'Relationships' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="Relationships" onPress={() => { setSelectedNav('Relationships'); }}>
+  <TouchableOpacity style={[styles.navItem, selectedNav === 'Relationships' && styles.navItemActive]} accessibilityRole="button" accessibilityLabel="Relationships" onPress={() => { setSelectedNav('Relationships'); navigation.navigate('Relationships'); }}>
           <MaterialCommunityIcons name="account-heart-outline" size={22} color={selectedNav === 'Relationships' ? '#2ecc71' : '#fff'} />
           {!compact && <Text style={[styles.smallIconLabel, selectedNav === 'Relationships' && styles.smallIconLabelActive]}>Relationships</Text>}
         </TouchableOpacity>
@@ -242,12 +243,18 @@ export default function GameScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         </View>
 
-        {selectedNav === 'Relationships' ? (
-          <RelationshipsPanel />
-        ) : (
-          <>
-            <View style={styles.actionsRow}>
-              <Text style={styles.sectionTitle}>What's Next? Action Bar</Text>
+        {(() => {
+          switch (selectedNav) {
+            case 'Career':
+              return <CareerPanel />;
+            case 'Skills':
+              return <SkillsPanel />;
+            case 'Home':
+            default:
+              return (
+                <>
+                  <View style={styles.actionsRow}>
+                    <Text style={styles.sectionTitle}>What's Next? Action Bar</Text>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -270,14 +277,16 @@ export default function GameScreen({ route, navigation }: Props) {
                 // inner EventLog should be slightly smaller than the card to allow for padding/header
                 const innerMax = Math.max(120, cardHeight - 40);
                 return (
-                  <View style={[styles.logCard, { height: cardHeight }]}> 
+                  <View style={[styles.logCard, { height: cardHeight }]}>
                     <EventLog maxHeight={innerMax} />
                   </View>
                 );
               })()}
             </View>
           </>
-        )}
+        );
+    }
+        })()}
 
   {/* spacer removed; paddingBottom handles safe spacing above the bottom nav */}
       </ScrollView>
@@ -400,6 +409,7 @@ const styles = StyleSheet.create({
   navRow: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingHorizontal: 8 },
   navItem: { alignItems: 'center', justifyContent: 'center' },
   navItemActive: { /* subtle background or scale could be added */ },
+  navItemDisabled: { opacity: 0.5 },
   smallIconLabelActive: { color: '#2ecc71' },
   smallIcon: { alignItems: 'center', marginRight: 8 },
   smallIconText: { fontSize: 18, color: '#fff' },

@@ -156,42 +156,7 @@ const useGameStore = create<GameState>()(
                 },
               };
             });
-            // auto-enroll in kindergarten at age 3 if not already enrolled
-            if (newAge === 3 && !get().isCurrentlyEnrolled && get().profile?.country) {
-              const countryCode = get().profile!.country;
-              const catalog = COUNTRY_EDUCATION_MAP[countryCode];
-              if (catalog && catalog.courses.preschool) {
-                const publicPreschool = catalog.courses.preschool.find(c => c.cost === 0);
-                if (publicPreschool) {
-                  get().enrollCourse(publicPreschool);
-                  get().addEvent(`Auto-enrolled in ${publicPreschool.name} at age 3.`);
-                }
-              }
-            }
-            // auto-enroll in primary school at the country's start age if educationStatus == 0 and not enrolled
-            if (get().educationStatus === 0 && !get().isCurrentlyEnrolled && get().profile?.country) {
-              const countryCode = get().profile!.country;
-              const catalog = COUNTRY_EDUCATION_MAP[countryCode];
-              if (catalog && catalog.courses.primary) {
-                const primaryCourse = catalog.courses.primary[0];
-                if (primaryCourse && newAge === primaryCourse.requiredAge) {
-                  get().enrollCourse(primaryCourse);
-                  get().addEvent(`Auto-enrolled in ${primaryCourse.name} at age ${newAge}.`);
-                }
-              }
-            }
-            // auto-enroll in secondary school at the country's start age if educationStatus >= 1 and not enrolled
-            if (get().educationStatus >= 1 && !get().isCurrentlyEnrolled && get().profile?.country) {
-              const countryCode = get().profile!.country;
-              const catalog = COUNTRY_EDUCATION_MAP[countryCode];
-              if (catalog && catalog.courses.secondary) {
-                const secondaryCourse = catalog.courses.secondary[0];
-                if (secondaryCourse && newAge === secondaryCourse.requiredAge) {
-                  get().enrollCourse(secondaryCourse);
-                  get().addEvent(`Auto-enrolled in ${secondaryCourse.name} at age ${newAge}.`);
-                }
-              }
-            }
+            
             const next = get();
             const deltas = [] as string[];
             const hD = (next.health ?? 0) - (prev.health ?? 0);
@@ -232,6 +197,52 @@ const useGameStore = create<GameState>()(
               console.warn('Error processing education progression', err);
             }
 
+            // Auto-enrollment logic (AFTER course completion to handle graduation transitions)
+            // New Global Education System:
+            // Age 3: Auto-enroll in Kindergarten
+            // Age 5: Complete Kindergarten → Auto-enroll in Primary School  
+            // Age 12: Complete Primary → Auto-enroll in Secondary School
+            // Age 18: Complete Secondary → Ready for university/work
+            
+            // Auto-enroll in kindergarten at age 3 if not already enrolled
+            if (newAge === 3 && !get().isCurrentlyEnrolled && get().profile?.country) {
+              const countryCode = get().profile!.country;
+              const catalog = COUNTRY_EDUCATION_MAP[countryCode];
+              if (catalog && catalog.courses.kindergarten) {
+                const publicKindergarten = catalog.courses.kindergarten.find(c => c.cost === 0);
+                if (publicKindergarten) {
+                  get().enrollCourse(publicKindergarten);
+                  get().addEvent(`Auto-enrolled in ${publicKindergarten.name} at age 3.`);
+                }
+              }
+            }
+            
+            // Auto-enroll in primary school if educationStatus == 1 (completed kindergarten) and not enrolled
+            if (get().educationStatus === 1 && !get().isCurrentlyEnrolled && get().profile?.country) {
+              const countryCode = get().profile!.country;
+              const catalog = COUNTRY_EDUCATION_MAP[countryCode];
+              if (catalog && catalog.courses.primary && catalog.courses.primary.length > 0) {
+                const primaryCourse = catalog.courses.primary[0];
+                if (primaryCourse) {
+                  get().enrollCourse(primaryCourse);
+                  get().addEvent(`Auto-enrolled in ${primaryCourse.name} at age ${newAge}.`);
+                }
+              }
+            }
+            
+            // Auto-enroll in secondary school if educationStatus == 2 (completed primary) and not enrolled
+            if (get().educationStatus === 2 && !get().isCurrentlyEnrolled && get().profile?.country) {
+              const countryCode = get().profile!.country;
+              const catalog = COUNTRY_EDUCATION_MAP[countryCode];
+              if (catalog && catalog.courses.secondary && catalog.courses.secondary.length > 0) {
+                const secondaryCourse = catalog.courses.secondary[0];
+                if (secondaryCourse) {
+                  get().enrollCourse(secondaryCourse);
+                  get().addEvent(`Auto-enrolled in ${secondaryCourse.name} at age ${newAge}.`);
+                }
+              }
+            }
+
             // call autosave callback when available
             const cb = (get() as any).autosaveCallback;
             if (cb) cb();
@@ -270,20 +281,10 @@ const useGameStore = create<GameState>()(
       state.addEvent(`Enrollment failed: too young for ${course.name}.`);
       return;
     }
-    // Constraint 3: education status (including alternate entry via GPA)
+    // Constraint 3: education status
     if (typeof course.requiredStatus === 'number') {
       const hasStatus = state.educationStatus >= course.requiredStatus;
-      // alternate entry: allow lower status + GPA if provided
-      let allowByAlternate = false;
-      if (course.alternateEntry && state.profile && typeof (state.profile as any).gpa === 'number') {
-        const alt = course.alternateEntry;
-        if (state.educationStatus >= (alt.minStatus ?? 0) && (state.profile as any).gpa >= (alt.minGpa ?? 0)) allowByAlternate = true;
-      }
-      // also allow if profile.gpa meets minGpa (legacy minGpa field)
-      if (!hasStatus && !allowByAlternate && typeof course.minGpa === 'number' && state.profile && typeof (state.profile as any).gpa === 'number') {
-        if ((state.profile as any).gpa >= course.minGpa) allowByAlternate = true;
-      }
-      if (!hasStatus && !allowByAlternate) {
+      if (!hasStatus) {
         Toast.show({ type: 'error', text1: 'Enrollment failed', text2: 'Educational prerequisites not met.' });
         state.addEvent(`Enrollment failed: prerequisites not met for ${course.name}.`);
         return;
@@ -307,45 +308,10 @@ const useGameStore = create<GameState>()(
       }
     }
 
-    // Constraint 6: required exams (MCAT, LSAT, DAT) and work experience for MBAs
-    if (course.requiredExam) {
-      const passed = state.profile && Array.isArray((state.profile as any).passedExams) && ((state.profile as any).passedExams as string[]).includes(course.requiredExam);
-      if (!passed) {
-        Toast.show({ type: 'error', text1: 'Enrollment failed', text2: `You must pass ${course.requiredExam} to enroll.` });
-        state.addEvent(`Enrollment failed: missing ${course.requiredExam} for ${course.name}.`);
-        return;
-      }
-    }
-
-    if (typeof course.requiredWorkYears === 'number') {
-      const years = (state.profile as any)?.yearsWorked ?? 0;
-      if (years < course.requiredWorkYears) {
-        Toast.show({ type: 'error', text1: 'Enrollment failed', text2: `Requires ${course.requiredWorkYears} years of work experience.` });
-        state.addEvent(`Enrollment failed: insufficient work experience for ${course.name}.`);
-        return;
-      }
-    }
-
-    // Constraint 7: logical constraints / blocking rules
-    if (course.logicalConstraint) {
-      // plumber apprenticeship and other trades that block academic enrollment
-      if (course.logicalConstraint.blocksAcademic && state.educationStatus < 5) {
-        // if the sim has any active trade certificate flagged previously, block
-        // here we deny enrollment if currentEnrollment is academic and a blocking trade is present (simplified)
-      }
-      // block pre-med if Sim has a trade that blocks it
-      if (course.logicalConstraint.blocksIfTradeCertificate && Array.isArray(course.logicalConstraint.blocksIfTradeCertificate)) {
-        const blocked = (course.logicalConstraint.blocksIfTradeCertificate as string[]).some((tradeId) => (state.completedCertificates || []).includes(tradeId) || (state.currentEnrollment && state.currentEnrollment.id === tradeId));
-        if (blocked) {
-          Toast.show({ type: 'error', text1: 'Enrollment failed', text2: `Your trade background prevents entry to ${course.name}.` });
-          state.addEvent(`Enrollment failed: trade background prevents ${course.name}.`);
-          return;
-        }
-      }
-    }
+    // All constraints passed for simplified education system
 
     // Passed checks — deduct money and set enrollment
-  set((s) => ({ money: s.money - (course.cost || 0), isCurrentlyEnrolled: true, currentEnrollment: { id: course.id || String(Date.now()), name: course.name, duration: course.duration || 1, timeRemaining: course.duration || 1, cost: course.cost || 0, grantsStatus: course.grantsStatus, preReqs: course.preReqs, logicalConstraint: course.logicalConstraint } as Enrollment }));
+  set((s) => ({ money: s.money - (course.cost || 0), isCurrentlyEnrolled: true, currentEnrollment: { id: course.id || String(Date.now()), name: course.name, duration: course.duration || 1, timeRemaining: course.duration || 1, cost: course.cost || 0, grantsStatus: course.grantsStatus, preReqs: course.preReqs } as Enrollment }));
     get().addEvent(`Enrolled in ${course.name}. Tuition paid: $${course.cost || 0}.`);
     Toast.show({ type: 'success', text1: 'Enrolled', text2: `Successfully enrolled in ${course.name}.` });
     const cb2 = (get() as any).autosaveCallback;
@@ -369,9 +335,10 @@ const useGameStore = create<GameState>()(
     if (!completedCourse) return;
     // Add degree/name to completedDegrees and update status
     set((s) => ({ completedDegrees: Array.from(new Set([...(s.completedDegrees || []), completedCourse.name])), completedCertificates: Array.from(new Set([...(s.completedCertificates || []), completedCourse.id])) }));
-    // Special handling for preschool completion: boost stats instead of status
-    const isPreschool = completedCourse.id?.includes('-preschool-');
-    if (isPreschool) {
+    
+    // Special handling for kindergarten completion: boost stats and update status
+    const isKindergarten = completedCourse.id?.includes('-kindergarten-');
+    if (isKindergarten) {
       const isPrivate = completedCourse.cost > 0;
       const smartsBoost = isPrivate ? 20 : 10;
       const happinessBoost = isPrivate ? 25 : 15;
@@ -382,15 +349,16 @@ const useGameStore = create<GameState>()(
       }));
       get().addEvent(`Completed ${completedCourse.name}. Smarts +${smartsBoost}, Happiness +${happinessBoost}.`);
       Toast.show({ type: 'success', text1: 'Graduation', text2: `Completed ${completedCourse.name}! Smarts +${smartsBoost}, Happiness +${happinessBoost}.`, position: 'bottom' });
-    } else {
-      // Determine status to grant: prefer explicit grantsStatus, otherwise attempt to infer
-      const grant = completedCourse.grantsStatus ?? (completedCourse.name?.toLowerCase()?.includes('associate') ? 4 : completedCourse.name?.toLowerCase()?.includes('b.a') || completedCourse.name?.toLowerCase()?.includes('b.s') || completedCourse.name?.toLowerCase()?.includes('bachelor') ? 5 : completedCourse.name?.toLowerCase()?.includes('master') || completedCourse.name?.toLowerCase()?.includes('m.d') || completedCourse.name?.toLowerCase()?.includes('j.d') || completedCourse.name?.toLowerCase()?.includes('ph.d') ? 6 : completedCourse.name?.toLowerCase()?.includes('certificate') ? 3 : null);
-      if (typeof grant === 'number') {
-        set(() => ({ educationStatus: Math.max(get().educationStatus, grant) }));
-        get().addEvent(`Education status updated to ${grant} after completing ${completedCourse.name}.`);
-      }
-      Toast.show({ type: 'success', text1: 'Graduation', text2: `Completed ${completedCourse.name}!` });
     }
+    
+    // Update education status based on grantsStatus
+    // Status system: 0=None, 1=Kindergarten, 2=Primary, 3=Secondary
+    if (typeof completedCourse.grantsStatus === 'number') {
+      set(() => ({ educationStatus: Math.max(get().educationStatus, completedCourse.grantsStatus) }));
+      get().addEvent(`Education status updated to ${completedCourse.grantsStatus} after completing ${completedCourse.name}.`);
+      Toast.show({ type: 'success', text1: 'Graduation', text2: `Completed ${completedCourse.name}!`, position: 'bottom' });
+    }
+    
     // clear enrollment
     set(() => ({ isCurrentlyEnrolled: false, currentEnrollment: null }));
     const cb4 = (get() as any).autosaveCallback;

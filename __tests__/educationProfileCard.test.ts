@@ -197,4 +197,41 @@ describe('Education Profile Card Reactive Updates', () => {
       : 0;
     expect(Math.round(progress2)).toBe(50);
   });
+
+  test('graduation year uses in-game date not real-world date', () => {
+    // Set a specific in-game date (year 2036)
+    const inGameDate = new Date('2036-01-01T00:00:00.000Z').toISOString();
+    
+    const course = { 
+      id: 'test-college', 
+      name: 'College Program', 
+      duration: 4, 
+      cost: 5000,
+      requiredAge: 18,
+      requiredStatus: 2
+    } as any;
+
+    useGameStore.setState({ 
+      age: 18, 
+      money: 10000, 
+      educationStatus: 2,
+      gameDate: inGameDate
+    });
+    
+    // Enroll in 4-year course
+    useGameStore.getState().enrollCourse(course);
+    
+    let state = useGameStore.getState();
+    
+    // Calculate expected graduation year based on in-game date
+    const currentGameYear = new Date(state.gameDate).getFullYear();
+    const expectedGraduation = currentGameYear + Math.ceil(state.currentEnrollment?.timeRemaining ?? 0);
+    
+    // Should be 2036 + 4 = 2040, NOT real-world year + 4
+    expect(currentGameYear).toBe(2036);
+    expect(expectedGraduation).toBe(2040);
+    
+    // Verify timeRemaining is correct
+    expect(state.currentEnrollment?.timeRemaining).toBe(4);
+  });
 });

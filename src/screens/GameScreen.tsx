@@ -50,6 +50,7 @@ export default function GameScreen({ route, navigation }: Props) {
   // Subscribe to education state for reactive updates
   const isCurrentlyEnrolled = useGameStore((s) => s.isCurrentlyEnrolled);
   const currentEnrollment = useGameStore((s) => s.currentEnrollment);
+  const gameDate = useGameStore((s) => s.gameDate);
   const moneyFormatter = new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
@@ -351,7 +352,9 @@ export default function GameScreen({ route, navigation }: Props) {
               ? ((enrollment.duration - (enrollment.timeRemaining ?? enrollment.duration)) / enrollment.duration) * 100 
               : 0;
             
-            const graduationYear = new Date().getFullYear() + Math.ceil(enrollment.timeRemaining ?? enrollment.duration ?? 0);
+            // Use in-game date, not real-world date
+            const currentGameYear = gameDate ? new Date(gameDate).getFullYear() : new Date().getFullYear();
+            const graduationYear = currentGameYear + Math.ceil(enrollment.timeRemaining ?? enrollment.duration ?? 0);
             
             return (
               <EducationInfo

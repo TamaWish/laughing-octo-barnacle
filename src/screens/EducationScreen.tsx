@@ -53,34 +53,18 @@ export default function EducationScreen({ navigation, route }: Props) {
         return false;
       }
     }
-    // Check required exams
-    if (course.requiredExam) {
-      const passed = profile && Array.isArray((profile as any).passedExams) && ((profile as any).passedExams as string[]).includes(course.requiredExam);
-      if (!passed) {
-        return false;
-      }
-    }
-    // Check work experience
-    if (typeof course.requiredWorkYears === 'number') {
-      const years = (profile as any)?.yearsWorked ?? 0;
-      if (years < course.requiredWorkYears) {
-        return false;
-      }
-    }
     return true;
   };
 
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-    <Text style={styles.title}>{config?.highSchoolName ? `Education in ${countryCode}` : 'Education'}</Text>
-    {config?.highSchoolName && (
-      <View style={styles.countryBadge}>
-        <Text style={styles.countryBadgeText}>
-          {countryMeta.flag}  {countryMeta.name} — {config.highSchoolName} → {config.universityDuration}-yr Univ
-        </Text>
-      </View>
-    )}
+    <Text style={styles.title}>{`Education in ${countryMeta.name}`}</Text>
+    <View style={styles.countryBadge}>
+      <Text style={styles.countryBadgeText}>
+        {countryMeta.flag}  {config.countryName} — {config.kindergartenName}, {config.primaryName}, {config.secondaryName}
+      </Text>
+    </View>
 
         <View style={styles.cardList}>
           {options.map((o) => (
@@ -106,8 +90,8 @@ export default function EducationScreen({ navigation, route }: Props) {
                             <Text style={[styles.courseDesc, completed && styles.completedText]}>{course.description}</Text>
                             <Text style={[styles.courseMeta, completed && styles.completedText]}>
                               Duration: {course.duration} yr • Cost: {formatCurrency(course.cost)}
-                              {course.requiredExam ? ` • Exam: ${course.requiredExam}` : ''}
-                              {course.requiredStatus ? ` • Status: ${course.requiredStatus}` : ''}
+                              {course.requiredStatus !== undefined ? ` • Req Status: ${course.requiredStatus}` : ''}
+                              {course.requiredAge !== undefined ? ` • Req Age: ${course.requiredAge}` : ''}
                             </Text>
                             {completed && <Text style={styles.completedLabel}>✓ Completed</Text>}
                             {!prereqsMet && !completed && <Text style={styles.prereqLabel}>Prerequisites not met</Text>}

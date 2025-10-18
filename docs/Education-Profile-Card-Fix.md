@@ -1,15 +1,16 @@
 # Education Profile Card Fix
 
 ## Issue
-The education progression display in the profile card on the GameScreen was not functioning reactively. When a sim enrolled in education, the education info component would not appear or update until the app was reloaded.
+The education progression display in the profile card on the GameScreen had two issues:
+1. Not functioning reactively - enrollment info wouldn't appear/update until app reload
+2. **Graduation year showing incorrect date** - using real-world year (2025) instead of in-game year (e.g., 2036)
 
-## Root Cause
-The code was using `useGameStore.getState()` to access the enrollment state, which provides a static snapshot rather than subscribing to state changes. This meant:
-- The component didn't re-render when `isCurrentlyEnrolled` or `currentEnrollment` changed
-- Education info only appeared after a full app reload or navigation change
+## Root Causes
+1. The code was using `useGameStore.getState()` to access the enrollment state, which provides a static snapshot rather than subscribing to state changes
+2. **Graduation year calculation used `new Date().getFullYear()` instead of the game's internal `gameDate`**
 
 ## Solution
-Modified `GameScreen.tsx` to properly subscribe to the enrollment state using Zustand's hook pattern:
+Modified `GameScreen.tsx` to properly subscribe to the enrollment state using Zustand's hook pattern AND use the in-game date for graduation calculations:
 
 ### Before:
 ```tsx
@@ -19,6 +20,7 @@ export default function GameScreen({ route, navigation }: Props) {
   
   {useGameStore.getState().isCurrentlyEnrolled && useGameStore.getState().currentEnrollment && (() => {
     const enrollment = useGameStore.getState().currentEnrollment;
+    const graduationYear = new Date().getFullYear() + timeRemaining; // WRONG: Uses real-world year!
     // ... render logic
   })()}
 }
@@ -31,10 +33,14 @@ export default function GameScreen({ route, navigation }: Props) {
   // Subscribe to education state for reactive updates
   const isCurrentlyEnrolled = useGameStore((s) => s.isCurrentlyEnrolled);
   const currentEnrollment = useGameStore((s) => s.currentEnrollment);
+  const gameDate = useGameStore((s) => s.gameDate); // NEW: Subscribe to in-game date
   // ... rest of component
   
   {age >= 3 && isCurrentlyEnrolled && currentEnrollment && (() => {
     const enrollment = currentEnrollment;
+    // Use in-game date, not real-world date
+    const currentGameYear = gameDate ? new Date(gameDate).getFullYear() : new Date().getFullYear();
+    const graduationYear = currentGameYear + timeRemaining; // CORRECT: Uses in-game year!
     // ... render logic
   })()}
 }
@@ -42,23 +48,29 @@ export default function GameScreen({ route, navigation }: Props) {
 
 ## Changes Made
 
-1. **Added reactive subscriptions** (lines ~51-52 in GameScreen.tsx):
+1. **Added reactive subscriptions** (lines ~51-53 in GameScreen.tsx):
    - `const isCurrentlyEnrolled = useGameStore((s) => s.isCurrentlyEnrolled);`
    - `const currentEnrollment = useGameStore((s) => s.currentEnrollment);`
+   - `const gameDate = useGameStore((s) => s.gameDate);` **← NEW: Subscribe to in-game date**
 
 2. **Updated render logic** (line ~346):
    - Replaced `useGameStore.getState()` calls with the subscribed state variables
    - Added null-safety checks with `??` operators for `timeRemaining` field
-   - **Added age constraint**: Education info only displays for sims age 3 or older
+   - Added age constraint: Education info only displays for sims age 3 or older
+   - **Fixed graduation year calculation to use `gameDate` instead of real-world date**
 
 ## What This Fixes
 
 ✅ Education info now appears immediately when a sim enrolls in a course  
 ✅ Progress bar updates reactively as years advance  
-✅ Graduation date displays correctly based on current enrollment  
+✅ **Graduation date now correctly reflects the IN-GAME year** (e.g., if game year is 2036 and 4 years remaining, shows 2040)  
 ✅ Years remaining counter updates properly  
 ✅ Component re-renders automatically when enrollment state changes  
-✅ Education info only displays for sims age 3 and older (not shown for ages 0-2)  
+✅ Education info only displays for sims age 3 and older (not shown for ages 0-2)
+
+### Example Scenario:
+- **Before Fix**: Game year is 2036, sim enrolled in 4-year program → Graduation shows 2029 (2025 + 4) ❌
+- **After Fix**: Game year is 2036, sim enrolled in 4-year program → Graduation shows 2040 (2036 + 4) ✅  
 
 ## How to Verify
 
@@ -83,8 +95,16 @@ export default function GameScreen({ route, navigation }: Props) {
 2. **Expected**: 
    - Progress bar should increase
    - Years remaining should decrease by 1
-   - Graduation year should remain constant
+   - **Graduation year should remain constant** (based on in-game year + remaining time)
+   - In-game year advances by 1
    - Updates should be immediate/reactive
+
+### Test Scenario 2b: Verify In-Game Date
+1. Check the current in-game year (stored in `gameDate`)
+2. Note the years remaining on the course
+3. **Expected**: Est. graduation = current in-game year + years remaining
+   - Example: If game year is 2036 and 4 years remaining → Est. graduation: 2040
+   - Example: If game year is 2050 and 2 years remaining → Est. graduation: 2052
 
 ### Test Scenario 3: Course Completion
 1. Continue advancing years until course completes (timeRemaining reaches 0)
@@ -113,7 +133,7 @@ export default function GameScreen({ route, navigation }: Props) {
 - `__tests__/gameStore.enroll.test.ts` - Enrollment validation tests
 
 ## Test Results
-All 43 tests pass (including 6 new tests for education profile card):
+All 44 tests pass (including 7 tests for education profile card):
 ```
 ✓ enrollment state updates are reactive
 ✓ education info should not display for ages 0-2
@@ -121,6 +141,7 @@ All 43 tests pass (including 6 new tests for education profile card):
 ✓ timeRemaining updates when advancing year
 ✓ enrollment clears upon completion
 ✓ progress calculation is accurate
+✓ graduation year uses in-game date not real-world date  ← NEW TEST
 ```
 
 Legacy enrollment tests:

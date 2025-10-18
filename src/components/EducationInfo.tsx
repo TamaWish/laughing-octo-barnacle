@@ -6,19 +6,26 @@ interface EducationInfoProps {
   yearsRemaining: number;
   progress: number; // 0-100
   graduationDate: string;
+  currentGPA?: number;
 }
 
 export default function EducationInfo({ 
   schoolName, 
   yearsRemaining, 
   progress,
-  graduationDate 
+  graduationDate,
+  currentGPA
 }: EducationInfoProps) {
   return (
     <View style={styles.container}>
       <Text style={styles.schoolName}>
         {schoolName} — {yearsRemaining} yr remaining
       </Text>
+      {currentGPA && (
+        <Text style={styles.gpaText}>
+          Current GPA: {currentGPA.toFixed(2)}
+        </Text>
+      )}
       <View style={styles.progressBarContainer}>
         <View style={[styles.progressBar, { width: `${progress}%` }]} />
       </View>
@@ -39,6 +46,13 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#374151',
     textAlign: 'center',
+  },
+  gpaText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#059669',
+    textAlign: 'center',
+    marginTop: 4,
   },
   progressBarContainer: {
     width: '100%',

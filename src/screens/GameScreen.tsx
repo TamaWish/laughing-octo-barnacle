@@ -362,10 +362,11 @@ export default function GameScreen({ route, navigation }: Props) {
                 yearsRemaining={Math.ceil(enrollment.timeRemaining ?? enrollment.duration ?? 0)}
                 progress={Math.round(progress)}
                 graduationDate={`${graduationYear}`}
+                currentGPA={enrollment.currentGPA}
               />
             );
           })()}
-          
+
           <ActionButtons
             onAdvanceYear={advanceYear}
             onEducation={() => navigation.navigate('Education')}

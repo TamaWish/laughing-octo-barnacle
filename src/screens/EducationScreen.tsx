@@ -4,8 +4,9 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation';
 import useGameStore from '../store/gameStore';
 // Import the new country map and helper function
-import { getEducationCatalog, getCountryMeta } from '../store/educationCatalog';
+import { getEducationCatalog, getCountryMeta, UNIVERSITY_MAJORS } from '../store/educationCatalog';
 import { formatCurrency } from '../utils/formatters';
+import { UniversityMajor } from '../store/types/education';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Education'>;
 
@@ -25,13 +26,36 @@ export default function EducationScreen({ navigation, route }: Props) {
   const enrollCourse = useGameStore((s) => s.enrollCourse);
   const completedDegrees = useGameStore((s) => s.completedDegrees);
   const completedCertificates = useGameStore((s) => s.completedCertificates);
+  const completedUniversityCourses = useGameStore((s) => s.completedUniversityCourses);
   const educationStatus = useGameStore((s) => s.educationStatus);
+  const isCurrentlyEnrolled = useGameStore((s) => s.isCurrentlyEnrolled);
   const [confirmVisible, setConfirmVisible] = React.useState(false);
   const [selectedCourse, setSelectedCourse] = React.useState<any | null>(null);
+  
+  // University-specific state
+  const [selectedMajor, setSelectedMajor] = React.useState<UniversityMajor | null>(null);
+  const [selectedPayment, setSelectedPayment] = React.useState<'loan' | 'parents' | 'cash' | null>(null);
+  const [showMajorSelection, setShowMajorSelection] = React.useState(false);
+  const [showPaymentSelection, setShowPaymentSelection] = React.useState(false);
 
   // Helper function to check if a course is completed
+  // For university courses with majors, we DON'T mark the whole course as completed
+  // We only mark individual majors as completed in the major selection modal
   const isCourseCompleted = (course: any) => {
-    return completedDegrees?.includes(course.name) || completedCertificates?.includes(course.id);
+    // For university courses with majors, never mark the whole course as completed
+    const isUniversityCourse = course.id?.includes('-university-') || course.id?.includes('-uni-');
+    if (isUniversityCourse && course.majors && course.majors.length > 0) {
+      return false; // Allow enrollment - major selection will show which majors are completed
+    }
+    return completedDegrees?.includes(course.name) || 
+           completedCertificates?.includes(course.id) ||
+           completedUniversityCourses?.includes(course.id);
+  };
+
+  // Helper function to check if a specific major in a course is completed
+  const isMajorCompleted = (courseId: string, majorId: string) => {
+    const courseKey = `${courseId}-${majorId}`;
+    return completedUniversityCourses?.includes(courseKey);
   };
 
   // Helper function to check if prerequisites are met
@@ -40,8 +64,12 @@ export default function EducationScreen({ navigation, route }: Props) {
     if (typeof course.requiredStatus === 'number' && educationStatus < course.requiredStatus) {
       return false;
     }
-    // Check age requirement
+    // Check minimum age requirement
     if (typeof course.requiredAge === 'number' && useGameStore.getState().age < course.requiredAge) {
+      return false;
+    }
+    // Check maximum age requirement (for kindergarten, primary, secondary)
+    if (typeof course.maxAge === 'number' && useGameStore.getState().age > course.maxAge) {
       return false;
     }
     // Check skill prerequisites
@@ -81,28 +109,55 @@ export default function EducationScreen({ navigation, route }: Props) {
                     {courses[o.id]?.map((course: any) => {
                       const completed = isCourseCompleted(course);
                       const prereqsMet = arePrerequisitesMet(course);
-                      const canEnroll = !completed && prereqsMet;
+                      const isEnrolledInThisCourse = isCurrentlyEnrolled && useGameStore.getState().currentEnrollment?.id === course.id;
+                      const isEnrolledInDifferentCourse = isCurrentlyEnrolled && useGameStore.getState().currentEnrollment?.id !== course.id;
+                      const isUniversityCourse = course.id?.includes('-university-') || course.id?.includes('-uni-');
+                      
+                      // For university courses, allow re-enrollment in different courses but not completed ones
+                      const canEnroll = !completed && prereqsMet && (!isCurrentlyEnrolled || (isUniversityCourse && !isEnrolledInThisCourse));
+                      const isGreyedOut = completed || !prereqsMet || (isEnrolledInDifferentCourse && !isUniversityCourse);
                       
                       return (
-                        <View key={course.id} style={[styles.courseRow, completed && styles.completedCourseRow]}>
+                        <View key={course.id} style={[styles.courseRow, isGreyedOut && styles.completedCourseRow]}>
                           <View style={{ flex: 1 }}>
-                            <Text style={[styles.courseName, completed && styles.completedText]}>{course.name} <Text style={[styles.courseType, completed && styles.completedText]}>[{course.type}]</Text></Text>
-                            <Text style={[styles.courseDesc, completed && styles.completedText]}>{course.description}</Text>
-                            <Text style={[styles.courseMeta, completed && styles.completedText]}>
+                            <Text style={[styles.courseName, isGreyedOut && styles.completedText]}>{course.name} <Text style={[styles.courseType, isGreyedOut && styles.completedText]}>[{course.type}]</Text></Text>
+                            <Text style={[styles.courseDesc, isGreyedOut && styles.completedText]}>{course.description}</Text>
+                            <Text style={[styles.courseMeta, isGreyedOut && styles.completedText]}>
                               Duration: {course.duration} yr • Cost: {formatCurrency(course.cost)}
                               {course.requiredStatus !== undefined ? ` • Req Status: ${course.requiredStatus}` : ''}
                               {course.requiredAge !== undefined ? ` • Req Age: ${course.requiredAge}` : ''}
+                              {course.preReqs?.requiredSkill ? ` • Req ${course.preReqs.requiredSkill}: ${course.preReqs.value}+` : ''}
                             </Text>
                             {completed && <Text style={styles.completedLabel}>✓ Completed</Text>}
-                            {!prereqsMet && !completed && <Text style={styles.prereqLabel}>Prerequisites not met</Text>}
+                            {isEnrolledInThisCourse && <Text style={styles.enrolledLabel}>Currently Enrolled</Text>}
+                            {isEnrolledInDifferentCourse && isUniversityCourse && <Text style={styles.prereqLabel}>Enrolled in different university program</Text>}
+                            {isEnrolledInDifferentCourse && !isUniversityCourse && <Text style={styles.prereqLabel}>Already enrolled in another course</Text>}
+                            {!prereqsMet && !completed && !isCurrentlyEnrolled && <Text style={styles.prereqLabel}>Prerequisites not met</Text>}
                           </View>
                           <TouchableOpacity 
                             style={[styles.enrollButton, (!canEnroll) && styles.disabledButton]} 
-                            onPress={() => canEnroll && setSelectedCourse(course)}
+                            onPress={() => {
+                              if (canEnroll) {
+                                setSelectedCourse(course);
+                                // Check if this is a university course
+                                if (o.id === 'university' && course.majors && course.majors.length > 0) {
+                                  setShowMajorSelection(true);
+                                  setSelectedMajor(null);
+                                  setSelectedPayment(null);
+                                } else {
+                                  setConfirmVisible(true);
+                                }
+                              }
+                            }}
                             disabled={!canEnroll}
                           >
                             <Text style={[styles.enrollText, (!canEnroll) && styles.disabledText]}>
-                              {completed ? 'Completed' : 'Enroll'}
+                              {completed ? 'Completed' : 
+                               isEnrolledInThisCourse ? 'Enrolled' :
+                               (isEnrolledInDifferentCourse && isUniversityCourse) ? 'Switch' :
+                               isEnrolledInDifferentCourse ? 'Enrolled' :
+                               !prereqsMet ? 'Locked' :
+                               'Enroll'}
                             </Text>
                           </TouchableOpacity>
                         </View>
@@ -125,6 +180,175 @@ export default function EducationScreen({ navigation, route }: Props) {
         </View>
 
         <View style={{ height: 120 }} />
+        
+        {/* Major Selection Modal (Step 1 for Universities) */}
+        <Modal visible={showMajorSelection} animationType="slide" transparent>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.7)' }}>
+            <View style={{ width: '92%', maxHeight: '80%', backgroundColor: '#1a1a2e', borderRadius: 16, padding: 20, borderWidth: 2, borderColor: '#e94560' }}>
+              <Text style={{ fontWeight: '900', fontSize: 22, marginBottom: 4, color: '#fff', textAlign: 'center' }}>
+                🏛️ {selectedCourse?.name}
+              </Text>
+              <Text style={{ fontSize: 16, color: '#4ec9ff', fontWeight: '700', textAlign: 'center', marginBottom: 16 }}>
+                Apply to university today!
+              </Text>
+              
+              <Text style={{ fontSize: 18, fontWeight: '800', color: '#fff', marginBottom: 12 }}>
+                Pick your major:
+              </Text>
+              
+              <ScrollView style={{ maxHeight: 400 }}>
+                {selectedCourse?.majors?.map((major: UniversityMajor) => {
+                  const isCompleted = isMajorCompleted(selectedCourse.id, major.id);
+                  return (
+                  <TouchableOpacity
+                    key={major.id}
+                    style={[
+                      styles.majorOption,
+                      selectedMajor?.id === major.id && styles.majorOptionSelected,
+                      isCompleted && styles.majorOptionCompleted
+                    ]}
+                    onPress={() => {
+                      if (!isCompleted) {
+                        setSelectedMajor(major);
+                      }
+                    }}
+                    disabled={isCompleted}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.majorName, selectedMajor?.id === major.id && styles.majorNameSelected, isCompleted && styles.majorNameCompleted]}>
+                        {major.name}
+                      </Text>
+                      <Text style={[styles.majorDesc, isCompleted && styles.majorDescCompleted]}>{major.description}</Text>
+                      {isCompleted && <Text style={styles.completedLabel}>✓ Completed</Text>}
+                    </View>
+                    {selectedMajor?.id === major.id && !isCompleted && (
+                      <Text style={{ fontSize: 24 }}>✓</Text>
+                    )}
+                    {isCompleted && (
+                      <Text style={{ fontSize: 16, color: '#999', fontWeight: '600' }}>Completed</Text>
+                    )}
+                  </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+              
+              <View style={{ height: 16 }} />
+              <TouchableOpacity
+                style={[styles.nextButton, !selectedMajor && styles.disabledNextButton]}
+                onPress={() => {
+                  if (selectedMajor) {
+                    setShowMajorSelection(false);
+                    setShowPaymentSelection(true);
+                  }
+                }}
+                disabled={!selectedMajor}
+              >
+                <Text style={styles.nextButtonText}>Next: Choose Payment →</Text>
+              </TouchableOpacity>
+              
+              <View style={{ height: 8 }} />
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => {
+                  setShowMajorSelection(false);
+                  setSelectedCourse(null);
+                  setSelectedMajor(null);
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Payment Selection Modal (Step 2 for Universities) */}
+        <Modal visible={showPaymentSelection} animationType="slide" transparent>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.7)' }}>
+            <View style={{ width: '92%', backgroundColor: '#1a1a2e', borderRadius: 16, padding: 20, borderWidth: 2, borderColor: '#e94560' }}>
+              <Text style={{ fontWeight: '900', fontSize: 20, marginBottom: 4, color: '#fff' }}>
+                {selectedCourse?.name}
+              </Text>
+              <Text style={{ fontSize: 14, color: '#aaa', marginBottom: 16 }}>
+                Major: {selectedMajor?.name}
+              </Text>
+              
+              <Text style={{ fontSize: 18, fontWeight: '800', color: '#fff', marginBottom: 12 }}>
+                How will you pay for your university program?
+              </Text>
+              
+              <View style={{ marginBottom: 12 }}>
+                <Text style={{ color: '#4ec9ff', fontWeight: '700', fontSize: 16 }}>
+                  Annual Tuition: {formatCurrency(selectedCourse?.cost || 0)}
+                </Text>
+                <Text style={{ color: '#aaa', fontSize: 14 }}>
+                  Years: {selectedCourse?.duration}
+                </Text>
+                <Text style={{ color: '#ff6b6b', fontWeight: '800', fontSize: 18, marginTop: 4 }}>
+                  Total Cost: {formatCurrency((selectedCourse?.cost || 0) * (selectedCourse?.duration || 1))}
+                </Text>
+              </View>
+              
+              <TouchableOpacity
+                style={[styles.paymentOption, selectedPayment === 'loan' && styles.paymentOptionSelected]}
+                onPress={() => setSelectedPayment('loan')}
+              >
+                <Text style={styles.paymentTitle}>💰 Apply for a student loan</Text>
+                <Text style={styles.paymentDesc}>Borrow money to pay for tuition. Repay after graduation.</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.paymentOption, selectedPayment === 'parents' && styles.paymentOptionSelected]}
+                onPress={() => setSelectedPayment('parents')}
+              >
+                <Text style={styles.paymentTitle}>👨‍👩‍👧 Ask my parents to pay</Text>
+                <Text style={styles.paymentDesc}>Request financial support from your parents.</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.paymentOption, selectedPayment === 'cash' && styles.paymentOptionSelected]}
+                onPress={() => setSelectedPayment('cash')}
+              >
+                <Text style={styles.paymentTitle}>💵 Pay with cash</Text>
+                <Text style={styles.paymentDesc}>Use your own savings to pay tuition upfront.</Text>
+              </TouchableOpacity>
+              
+              <View style={{ height: 16 }} />
+              <TouchableOpacity
+                style={[styles.nextButton, !selectedPayment && styles.disabledNextButton]}
+                onPress={() => {
+                  if (selectedPayment && selectedMajor) {
+                    // Enroll with major and payment method
+                    enrollCourse({
+                      ...selectedCourse,
+                      major: selectedMajor.id,
+                      paymentMethod: selectedPayment
+                    });
+                    setShowPaymentSelection(false);
+                    setSelectedCourse(null);
+                    setSelectedMajor(null);
+                    setSelectedPayment(null);
+                  }
+                }}
+                disabled={!selectedPayment}
+              >
+                <Text style={styles.nextButtonText}>Confirm Enrollment</Text>
+              </TouchableOpacity>
+              
+              <View style={{ height: 8 }} />
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => {
+                  setShowPaymentSelection(false);
+                  setShowMajorSelection(true);
+                }}
+              >
+                <Text style={styles.cancelButtonText}>← Back to Majors</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Regular Enrollment Confirmation Modal (for non-university courses) */}
         <Modal visible={confirmVisible} animationType="slide" transparent>
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }}>
             <View style={{ width: '92%', backgroundColor: '#fff', borderRadius: 12, padding: 16 }}>
@@ -184,13 +408,104 @@ const styles = StyleSheet.create({
   courseType: { fontWeight: '600', color: '#6b7280', fontSize: 12 },
   courseDesc: { color: '#6b7280', fontSize: 12, marginTop: 2 },
   courseMeta: { color: '#93a3ad', fontSize: 12, marginTop: 4 },
-  completedText: { color: '#888', textDecorationLine: 'line-through' },
+  completedText: { color: '#999', textDecorationLine: 'line-through' },
   completedLabel: { color: '#28a745', fontSize: 12, fontWeight: '600', marginTop: 4 },
+  enrolledLabel: { color: '#ffa500', fontSize: 12, fontWeight: '600', marginTop: 4 },
   prereqLabel: { color: '#dc3545', fontSize: 12, fontWeight: '600', marginTop: 4 },
   enrollButton: { backgroundColor: '#2b8cff', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, marginLeft: 12 },
-  disabledButton: { backgroundColor: '#ccc' },
+  disabledButton: { backgroundColor: '#d3d3d3' },
   enrollText: { color: '#fff', fontWeight: '700' },
   disabledText: { color: '#666' },
+
+  // University major selection styles
+  majorOption: {
+    backgroundColor: '#2a2a40',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#3a3a50',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  majorOptionSelected: {
+    borderColor: '#4ec9ff',
+    backgroundColor: '#1e3a5f',
+  },
+  majorOptionCompleted: {
+    backgroundColor: '#2a2a35',
+    borderColor: '#444',
+    opacity: 0.6,
+  },
+  majorName: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  majorNameSelected: {
+    color: '#4ec9ff',
+  },
+  majorNameCompleted: {
+    color: '#888',
+    textDecorationLine: 'line-through',
+  },
+  majorDesc: {
+    fontSize: 13,
+    color: '#aaa',
+  },
+  majorDescCompleted: {
+    color: '#666',
+    textDecorationLine: 'line-through',
+  },
+  nextButton: {
+    backgroundColor: '#4ec9ff',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  disabledNextButton: {
+    backgroundColor: '#555',
+  },
+  nextButtonText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 16,
+  },
+  cancelButton: {
+    backgroundColor: '#555',
+    padding: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+
+  // Payment selection styles
+  paymentOption: {
+    backgroundColor: '#2a2a40',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#3a3a50',
+  },
+  paymentOptionSelected: {
+    borderColor: '#4ec9ff',
+    backgroundColor: '#1e3a5f',
+  },
+  paymentTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 6,
+  },
+  paymentDesc: {
+    fontSize: 13,
+    color: '#aaa',
+  },
 
   bottomBar: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 86, backgroundColor: '#12323e', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12 },
   navRow: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingHorizontal: 8 },

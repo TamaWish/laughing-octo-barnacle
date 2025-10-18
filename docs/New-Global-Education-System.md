@@ -22,11 +22,25 @@ A simplified, globally consistent education system with country-specific school 
    - Annual +2 Smarts, +1 Happiness
    - Completion at age 18 = Ready for work/university
 
+4. **University** (Age 18+, 2-4 years)
+   - Status Level: 3 → 4
+   - Optional enrollment (not automatic)
+   - Requires secondary school completion
+   - Choose from 20 majors
+   - 3 payment methods: Student Loan, Parents, Cash
+   - Prestige levels: Low (Community), Medium (State), High (Private), Elite (Ivy/Oxbridge)
+
 ### Auto-Enrollment Logic
 - **Age 3**: Automatically enrolled in public kindergarten
 - **Status 1** (Kindergarten complete): Auto-enrolled in primary school
 - **Status 2** (Primary complete): Auto-enrolled in secondary school
 - **Status 3** (Secondary complete): Education complete, ready for work/university
+
+### Age Restrictions
+- **Kindergarten**: Ages 3-6 (max age 6 - greyed out if too old)
+- **Primary School**: Ages 5-13 (max age 13 - greyed out if too old)
+- **Secondary School**: Ages 12-19 (max age 19 - greyed out if too old)
+- **University**: Ages 18+ (no maximum age restriction)
 
 ### Public vs Private Schools
 Each level offers two options:
@@ -84,14 +98,21 @@ Each level offers two options:
 
 ### Files Modified
 1. **src/store/types/education.ts**
-   - Simplified `CourseCategory` type to: `'kindergarten' | 'primary' | 'secondary'`
+   - Simplified `CourseCategory` type to: `'kindergarten' | 'primary' | 'secondary' | 'university'`
+   - Added `maxAge?: number` field for age restrictions
    - Removed complex constraints (alternateEntry, minGpa, logicalConstraint, requiredExam, requiredWorkYears)
-   - Kept essential fields: id, name, type, description, duration, cost, requiredStatus, requiredAge, grantsStatus, preReqs, isPublic
+   - Kept essential fields: id, name, type, description, duration, cost, requiredStatus, requiredAge, maxAge, grantsStatus, preReqs, isPublic
 
 2. **src/store/educationCatalog.ts**
    - Complete rewrite with global system
    - 8 countries with country-specific school names
-   - Each country has 3 categories, each with 2 options (public/private)
+   - Each country has 4 categories (kindergarten, primary, secondary, university)
+   - Each category has 2 options (public/private) except university (4 options)
+   - Added `maxAge` restrictions:
+     - Kindergarten: maxAge 6
+     - Primary: maxAge 13
+     - Secondary: maxAge 19
+     - University: No max age
    - Simplified `CountryEducationCatalog` interface
    - Helper functions: `getEducationCatalog()`, `getCountryMeta()`
 
@@ -105,6 +126,13 @@ Each level offers two options:
 
 4. **src/screens/EducationScreen.tsx**
    - Updated badge display to show country-specific school names
+   - Enhanced `arePrerequisitesMet()` function to check both minimum and maximum age
+   - Courses grey out if:
+     - Already completed
+     - Prerequisites not met (status/age/skills)
+     - Too young (below `requiredAge`)
+     - Too old (above `maxAge`)
+     - Enrolled in a different course
    - Removed exam and work experience prerequisite checks
    - Simplified course metadata display
 
@@ -121,13 +149,24 @@ Each level offers two options:
 - **1**: Kindergarten complete (age ~5)
 - **2**: Primary complete (age ~12)
 - **3**: Secondary complete (age ~18)
-- **4-6**: Reserved for future university levels
+- **4**: University/College complete (age ~20-22)
+- **5-6**: Reserved for future graduate/professional programs
+
+## Current Features
+✅ **Kindergarten** - Ages 3-5 (Status 0 → 1)
+✅ **Primary School** - Ages 5-12 (Status 1 → 2)
+✅ **Secondary School** - Ages 12-18 (Status 2 → 3)
+✅ **University** - Ages 18+ (Status 3 → 4)
+   - 32 universities across 8 countries
+   - 20 majors with skill boosts
+   - 3 payment methods (loan/parents/cash)
+   - Student loan system with repayment
 
 ## Future Expansion
 The system is designed to support future additions:
-- University/College (status 4-5)
-- Graduate school (status 6)
+- Graduate school (Master's, PhD - status 5-6)
 - Professional certifications
 - Vocational training
+- Trade schools
 
 All would follow the same simplified structure with country-specific names.

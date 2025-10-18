@@ -21,6 +21,10 @@ type GameState = {
   currentEnrollment?: Enrollment | null;
   completedDegrees: string[];
   completedCertificates: string[]; // store completed course IDs for robust bookkeeping
+  completedUniversityCourses: string[]; // store completed university course IDs to prevent re-enrollment in same course
+  enrollmentHistory: Array<{ enrollment: Enrollment; completionDate: string }>; // Track completed enrollments with completion date
+  studentLoanDebt: number; // Total student loan debt
+  studentLoanHistory: Array<{ amount: number; course: string; date: string }>; // Track loan history
   // career system
   career: CareerState;
   // core dynamic stats (0-100)
@@ -41,6 +45,7 @@ type GameState = {
   enrollCourse: (course: Course) => void;
   dropEnrollment: (penalty?: number) => void;
   handleCourseCompletion: (completedCourse: Enrollment) => void;
+  repayStudentLoan: (amount?: number) => void;
   // Career actions
   applyForJob: (job: Job) => void;
   work: () => void;
@@ -70,6 +75,12 @@ type GameState = {
   // Relationship actions
   spendTimewithFamilyMember: (memberId: string) => void;
   giveGiftToFamilyMember: (memberId: string, cost: number) => void;
+  complimentFamilyMember: (memberId: string) => void;
+  conversationWithFamilyMember: (memberId: string) => void;
+  startArgument: (memberId: string) => { memberName: string; topic: string; escalated: boolean; relationshipChange: number; conflictChange: number } | null;
+  apologize: (memberId: string) => void;
+  makeUp: (memberId: string) => void;
+  checkAndHandleBreakup: (memberId: string) => boolean;
   // Asset actions
   assets: Asset[];
   buyAsset: (asset: Asset) => void;
@@ -92,6 +103,10 @@ const useGameStore = create<GameState>()(
   currentEnrollment: null,
   completedDegrees: [],
   completedCertificates: [],
+  completedUniversityCourses: [],
+  enrollmentHistory: [],
+  studentLoanDebt: 0,
+  studentLoanHistory: [],
   // career defaults
   career: {
     currentJob: null,
@@ -184,6 +199,28 @@ const useGameStore = create<GameState>()(
                   }));
                   get().addEvent(`Gained +2 Smarts and +1 Happiness from schooling.`);
                 }
+
+                // Calculate GPA for this year based on performance
+                const currentSmarts = after.smarts ?? 50;
+                const basePerformance = currentSmarts / 100; // 0-1 scale
+                const randomFactor = (Math.random() - 0.5) * 0.4; // -0.2 to +0.2 randomness
+                const yearlyPerformance = Math.max(0, Math.min(1, basePerformance + randomFactor));
+                const yearlyGPA = 2.0 + (yearlyPerformance * 2.0); // 2.0-4.0 scale
+
+                // Update GPA as weighted average of previous GPA and this year's performance
+                const currentGPA = after.currentEnrollment.currentGPA ?? 2.5;
+                const yearsCompleted = after.currentEnrollment.duration - newTime;
+                const totalYears = after.currentEnrollment.duration;
+                const newGPA = ((currentGPA * yearsCompleted) + yearlyGPA) / (yearsCompleted + 1);
+
+                set((s) => ({
+                  currentEnrollment: s.currentEnrollment ? {
+                    ...s.currentEnrollment,
+                    currentGPA: Math.round(newGPA * 100) / 100 // Round to 2 decimal places
+                  } : s.currentEnrollment
+                }));
+
+                get().addEvent(`Academic year completed. GPA: ${yearlyGPA.toFixed(2)} (Overall: ${(Math.round(newGPA * 100) / 100).toFixed(2)})`);
                 if (newTime <= 0) {
                   // capture completed enrollment (use the copy from get())
                   const completed = get().currentEnrollment;
@@ -247,6 +284,32 @@ const useGameStore = create<GameState>()(
             const cb = (get() as any).autosaveCallback;
             if (cb) cb();
 
+            // Apply relationship decay over time
+            const currentState = get();
+            if (currentState.profile) {
+              const { applyRelationshipDecay } = require('../utils/relationshipDecay');
+              const { updatedProfile, decayEvents } = applyRelationshipDecay(
+                currentState.profile,
+                currentState.gameDate
+              );
+              
+              if (updatedProfile && decayEvents.length > 0) {
+                set({ profile: updatedProfile });
+                // Log significant relationship decays (only show first 3 to avoid spam)
+                const significantDecays = decayEvents.slice(0, 3);
+                significantDecays.forEach((event: string) => get().addEvent(`Relationship decay: ${event}`));
+                
+                if (decayEvents.length > 3) {
+                  get().addEvent(`...and ${decayEvents.length - 3} more relationships declined.`);
+                }
+                
+                // Check if partner relationship hit 0 due to decay
+                if (updatedProfile.partner) {
+                  get().checkAndHandleBreakup(updatedProfile.partner.id);
+                }
+              }
+            }
+
             // Handle random life events
             if (Math.random() < 0.2) { // 20% chance of a random event
               const event = LIFE_EVENTS[Math.floor(Math.random() * LIFE_EVENTS.length)];
@@ -267,13 +330,33 @@ const useGameStore = create<GameState>()(
       },
 
   // enroll a Sim in a course after performing checks
-  enrollCourse: (course: Course) => {
+  enrollCourse: (course: Course & { major?: string; paymentMethod?: 'loan' | 'parents' | 'cash' }) => {
     const state = get();
-    // Constraint 1: mutually exclusive
-    if (state.isCurrentlyEnrolled) {
-      Toast.show({ type: 'error', text1: 'Enrollment failed', text2: 'You are already enrolled in a program.' });
-      state.addEvent('Enrollment failed: already enrolled in another program.');
+    const isUniversityCourse = course.id?.includes('-university-') || course.id?.includes('-uni-');
+    
+    // For university courses with majors, check if this specific course+major combination is completed
+    // This allows re-enrollment in the same university with different major
+    const courseKey = course.major ? `${course.id}-${course.major}` : course.id;
+    if (isUniversityCourse && state.completedUniversityCourses?.includes(courseKey)) {
+      Toast.show({ type: 'error', text1: 'Already Completed', text2: 'You have already completed this course with this major.' });
+      state.addEvent(`Enrollment failed: already completed ${course.name} (${course.major || 'General'}).`);
       return;
+    }
+    
+    // Constraint 1: mutually exclusive (relaxed for ALL university courses)
+    if (state.isCurrentlyEnrolled) {
+      if (isUniversityCourse) {
+        // For university courses: drop current enrollment and enroll in new one
+        // (Allow switching between any university courses in the same or different institutions)
+        set(() => ({ isCurrentlyEnrolled: false, currentEnrollment: null }));
+        state.addEvent(`Dropped current enrollment to switch to ${course.name}.`);
+        Toast.show({ type: 'info', text1: 'Switched Courses', text2: `Enrolled in ${course.name}.` });
+      } else {
+        // Non-university courses still follow strict mutual exclusion
+        Toast.show({ type: 'error', text1: 'Enrollment failed', text2: 'You are already enrolled in a program.' });
+        state.addEvent('Enrollment failed: already enrolled in another program.');
+        return;
+      }
     }
     // Constraint 2: age (strict numeric check)
     if (typeof course.requiredAge === 'number' && state.age < course.requiredAge) {
@@ -290,12 +373,38 @@ const useGameStore = create<GameState>()(
         return;
       }
     }
-    // Constraint 4: money
-    if (typeof course.cost === 'number' && state.money < course.cost) {
-      Toast.show({ type: 'error', text1: 'Enrollment failed', text2: 'Insufficient funds for tuition.' });
-      state.addEvent(`Enrollment failed: insufficient funds for ${course.name}.`);
-      return;
+
+    // Handle payment based on method for university courses
+    const totalCost = (course.cost || 0) * (course.duration || 1);
+    const paymentMethod = course.paymentMethod || 'cash';
+    let paidAmount = 0;
+    let loanAmount = 0;
+
+    if (paymentMethod === 'cash') {
+      // Constraint 4: money (for cash payment)
+      if (state.money < totalCost) {
+        Toast.show({ type: 'error', text1: 'Enrollment failed', text2: 'Insufficient funds for tuition.' });
+        state.addEvent(`Enrollment failed: insufficient funds for ${course.name}.`);
+        return;
+      }
+      paidAmount = totalCost;
+    } else if (paymentMethod === 'loan') {
+      // Student loan - no upfront payment required
+      loanAmount = totalCost;
+      paidAmount = 0;
+    } else if (paymentMethod === 'parents') {
+      // Parents pay - simulate parent decision
+      // For now, assume parents always pay if relationship is good (can be enhanced later)
+      // TODO: Add parent relationship check
+      const parentsWillPay = Math.random() > 0.2; // 80% chance parents agree
+      if (!parentsWillPay) {
+        Toast.show({ type: 'error', text1: 'Enrollment failed', text2: 'Your parents declined to pay for your education.' });
+        state.addEvent(`Enrollment failed: parents declined to pay for ${course.name}.`);
+        return;
+      }
+      paidAmount = 0; // Parents pay, no cost to player
     }
+
     // Constraint 5: skill prereqs (very basic: checks against top-level stats)
     if (course.preReqs && course.preReqs.requiredSkill) {
       const skill = course.preReqs.requiredSkill;
@@ -308,12 +417,51 @@ const useGameStore = create<GameState>()(
       }
     }
 
-    // All constraints passed for simplified education system
+    // All constraints passed - enroll student
 
-    // Passed checks — deduct money and set enrollment
-  set((s) => ({ money: s.money - (course.cost || 0), isCurrentlyEnrolled: true, currentEnrollment: { id: course.id || String(Date.now()), name: course.name, duration: course.duration || 1, timeRemaining: course.duration || 1, cost: course.cost || 0, grantsStatus: course.grantsStatus, preReqs: course.preReqs } as Enrollment }));
-    get().addEvent(`Enrolled in ${course.name}. Tuition paid: $${course.cost || 0}.`);
-    Toast.show({ type: 'success', text1: 'Enrolled', text2: `Successfully enrolled in ${course.name}.` });
+    // Deduct money if cash payment
+    const newMoney = paymentMethod === 'cash' ? state.money - paidAmount : state.money;
+
+    // Add to student loan debt if loan payment
+    const newLoanDebt = paymentMethod === 'loan' ? state.studentLoanDebt + loanAmount : state.studentLoanDebt;
+    const newLoanHistory = paymentMethod === 'loan' 
+      ? [...state.studentLoanHistory, { amount: loanAmount, course: course.name, date: state.gameDate }]
+      : state.studentLoanHistory;
+
+    // Create enrollment
+    const enrollment: Enrollment = {
+      id: course.id || String(Date.now()),
+      name: course.name,
+      duration: course.duration || 1,
+      timeRemaining: course.duration || 1,
+      cost: course.cost || 0,
+      grantsStatus: course.grantsStatus,
+      preReqs: course.preReqs,
+      major: course.major,
+      paymentMethod: paymentMethod,
+      currentGPA: Math.max(2.0, Math.min(4.0, (state.smarts / 25))), // GPA based on smarts (0-100 -> 2.0-4.0)
+    };
+
+    set({
+      money: newMoney,
+      isCurrentlyEnrolled: true,
+      currentEnrollment: enrollment,
+      studentLoanDebt: newLoanDebt,
+      studentLoanHistory: newLoanHistory,
+    });
+
+    // Log enrollment
+    if (paymentMethod === 'cash') {
+      get().addEvent(`Enrolled in ${course.name}. Paid ${totalCost.toLocaleString()} cash.`);
+      Toast.show({ type: 'success', text1: 'Enrolled', text2: `Paid $${totalCost.toLocaleString()} for ${course.name}.` });
+    } else if (paymentMethod === 'loan') {
+      get().addEvent(`Enrolled in ${course.name}. Took student loan of ${loanAmount.toLocaleString()}.`);
+      Toast.show({ type: 'success', text1: 'Enrolled', text2: `Student loan of $${loanAmount.toLocaleString()} approved.` });
+    } else if (paymentMethod === 'parents') {
+      get().addEvent(`Enrolled in ${course.name}. Parents paid tuition.`);
+      Toast.show({ type: 'success', text1: 'Enrolled', text2: `Parents agreed to pay for ${course.name}!` });
+    }
+
     const cb2 = (get() as any).autosaveCallback;
     if (cb2) cb2();
   },
@@ -333,8 +481,56 @@ const useGameStore = create<GameState>()(
 
   handleCourseCompletion: (completedCourse: any) => {
     if (!completedCourse) return;
+    
+    // Handle student loan repayment if course was paid with loan
+    if (completedCourse.paymentMethod === 'loan') {
+      const totalCourseCost = (completedCourse.cost || 0) * (completedCourse.duration || 1);
+      const state = get();
+      
+      // Player chooses to pay half or full
+      // For now, default to half payment (can be enhanced with UI choice later)
+      const repaymentAmount = Math.floor(totalCourseCost / 2);
+      
+      if (state.money >= repaymentAmount) {
+        // Can afford to pay half
+        set((s) => ({
+          money: s.money - repaymentAmount,
+          studentLoanDebt: Math.max(0, s.studentLoanDebt - repaymentAmount),
+        }));
+        get().addEvent(`Repaid $${repaymentAmount.toLocaleString()} student loan for ${completedCourse.name}.`);
+        Toast.show({ 
+          type: 'info', 
+          text1: 'Loan Repayment', 
+          text2: `Paid $${repaymentAmount.toLocaleString()} (half). Remaining debt: $${(state.studentLoanDebt - repaymentAmount).toLocaleString()}`,
+          position: 'bottom'
+        });
+      } else {
+        // Cannot afford repayment - debt continues to accumulate
+        get().addEvent(`Unable to repay student loan for ${completedCourse.name}. Debt remains: $${state.studentLoanDebt.toLocaleString()}`);
+        Toast.show({ 
+          type: 'error', 
+          text1: 'Loan Repayment', 
+          text2: `Insufficient funds. Student debt: $${state.studentLoanDebt.toLocaleString()}`,
+          position: 'bottom'
+        });
+      }
+    }
+    
     // Add degree/name to completedDegrees and update status
-    set((s) => ({ completedDegrees: Array.from(new Set([...(s.completedDegrees || []), completedCourse.name])), completedCertificates: Array.from(new Set([...(s.completedCertificates || []), completedCourse.id])) }));
+    const isUniversityCourse = completedCourse.id?.includes('-university-') || completedCourse.id?.includes('-uni-');
+    // For university courses with majors, store courseId-major combination to allow re-enrollment with different major
+    const courseKey = completedCourse.major ? `${completedCourse.id}-${completedCourse.major}` : completedCourse.id;
+    set((s) => ({
+      completedDegrees: Array.from(new Set([...(s.completedDegrees || []), completedCourse.name])),
+      completedCertificates: Array.from(new Set([...(s.completedCertificates || []), completedCourse.id])),
+      completedUniversityCourses: isUniversityCourse 
+        ? Array.from(new Set([...(s.completedUniversityCourses || []), courseKey]))
+        : s.completedUniversityCourses,
+      enrollmentHistory: [...(s.enrollmentHistory || []), { 
+        enrollment: completedCourse, 
+        completionDate: get().gameDate || new Date().toISOString() 
+      }]
+    }));
     
     // Special handling for kindergarten completion: boost stats and update status
     const isKindergarten = completedCourse.id?.includes('-kindergarten-');
@@ -351,8 +547,19 @@ const useGameStore = create<GameState>()(
       Toast.show({ type: 'success', text1: 'Graduation', text2: `Completed ${completedCourse.name}! Smarts +${smartsBoost}, Happiness +${happinessBoost}.`, position: 'bottom' });
     }
     
+    // Apply skill boosts from university major
+    if (completedCourse.major) {
+      // TODO: Implement major-specific skill boosts
+      const clamp = (v: number) => Math.max(0, Math.min(100, v));
+      const smartsBoost = 25; // Base university boost
+      set((s) => ({
+        smarts: clamp((s.smarts ?? 50) + smartsBoost),
+      }));
+      get().addEvent(`Graduated with degree in ${completedCourse.major}. Smarts +${smartsBoost}.`);
+    }
+    
     // Update education status based on grantsStatus
-    // Status system: 0=None, 1=Kindergarten, 2=Primary, 3=Secondary
+    // Status system: 0=None, 1=Kindergarten, 2=Primary, 3=Secondary, 4=University
     if (typeof completedCourse.grantsStatus === 'number') {
       set(() => ({ educationStatus: Math.max(get().educationStatus, completedCourse.grantsStatus) }));
       get().addEvent(`Education status updated to ${completedCourse.grantsStatus} after completing ${completedCourse.name}.`);
@@ -364,6 +571,41 @@ const useGameStore = create<GameState>()(
     const cb4 = (get() as any).autosaveCallback;
     if (cb4) cb4();
   },
+
+  repayStudentLoan: (amount?: number) => {
+    const state = get();
+    
+    if (state.studentLoanDebt <= 0) {
+      Toast.show({ type: 'info', text1: 'No Debt', text2: 'You have no student loan debt!' });
+      return;
+    }
+
+    // If no amount specified, pay full debt or all available money
+    const repayAmount = amount || Math.min(state.money, state.studentLoanDebt);
+
+    if (state.money < repayAmount) {
+      Toast.show({ type: 'error', text1: 'Insufficient Funds', text2: 'Not enough money to make this payment.' });
+      return;
+    }
+
+    const newDebt = Math.max(0, state.studentLoanDebt - repayAmount);
+    set((s) => ({
+      money: s.money - repayAmount,
+      studentLoanDebt: newDebt,
+    }));
+
+    get().addEvent(`Repaid $${repayAmount.toLocaleString()} student loan. Remaining: $${newDebt.toLocaleString()}.`);
+    
+    if (newDebt === 0) {
+      Toast.show({ type: 'success', text1: 'Debt Free!', text2: 'You have paid off all student loans!' });
+    } else {
+      Toast.show({ type: 'success', text1: 'Payment Made', text2: `Paid $${repayAmount.toLocaleString()}. Remaining: $${newDebt.toLocaleString()}` });
+    }
+
+    const cb = (get() as any).autosaveCallback;
+    if (cb) cb();
+  },
+
   visitDoctor: (cost = 50) => {
         // pay the cost and improve health and happiness slightly
         const prev = get();
@@ -478,7 +720,19 @@ const useGameStore = create<GameState>()(
           const d = s.gameDate ? new Date(s.gameDate) : new Date();
           return { eventLog: [...s.eventLog, `${d.toLocaleDateString()}: ${msg}`] };
         }),
-  reset: () => set({ age: 0, money: 1000, eventLog: [], gameDate: new Date().toISOString() }),
+  reset: () => set({ 
+    age: 0, 
+    money: 1000, 
+    eventLog: [], 
+    gameDate: new Date().toISOString(),
+    studentLoanDebt: 0,
+    studentLoanHistory: [],
+    educationStatus: 0,
+    isCurrentlyEnrolled: false,
+    currentEnrollment: null,
+    completedDegrees: [],
+    completedCertificates: [],
+  }),
   spendTimewithFamilyMember: (memberId: string) => {
     const state = get();
     if (!state.profile) return;
@@ -487,22 +741,52 @@ const useGameStore = create<GameState>()(
     let memberName = '';
 
     const updatedProfile = { ...state.profile };
+    
+    // Check partner
     if (updatedProfile.partner?.id === memberId) {
       updatedProfile.partner.relationshipScore = clamp((updatedProfile.partner.relationshipScore ?? 50) + 5);
+      updatedProfile.partner.lastInteractionDate = state.gameDate;
       memberName = updatedProfile.partner.firstName;
-    } else {
+    } 
+    // Check friends
+    else if (updatedProfile.friends) {
+      updatedProfile.friends = updatedProfile.friends.map(m => {
+        if (m.id === memberId) {
+          m.relationshipScore = clamp((m.relationshipScore ?? 50) + 5);
+          m.lastInteractionDate = state.gameDate;
+          memberName = m.firstName;
+        }
+        return m;
+      });
+    }
+    // Check exes
+    if (!memberName && updatedProfile.exes) {
+      updatedProfile.exes = updatedProfile.exes.map(m => {
+        if (m.id === memberId) {
+          m.relationshipScore = clamp((m.relationshipScore ?? 50) + 5);
+          m.lastInteractionDate = state.gameDate;
+          memberName = m.firstName;
+        }
+        return m;
+      });
+    }
+    // Check family
+    if (!memberName) {
       const family = updatedProfile.family;
       if (family) {
         const updateMember = (m: any) => {
           if (m.id === memberId) {
             m.relationshipScore = clamp((m.relationshipScore ?? 50) + 5);
+            m.lastInteractionDate = state.gameDate;
             memberName = m.firstName;
           }
           return m;
         };
+        if (family.grandparents) family.grandparents = family.grandparents.map(updateMember);
         if (family.parents) family.parents = family.parents.map(updateMember);
         if (family.siblings) family.siblings = family.siblings.map(updateMember);
         if (family.children) family.children = family.children.map(updateMember);
+        if (family.grandchildren) family.grandchildren = family.grandchildren.map(updateMember);
       }
     }
 
@@ -527,22 +811,52 @@ const useGameStore = create<GameState>()(
     let memberName = '';
 
     const updatedProfile = { ...state.profile };
+    
+    // Check partner
     if (updatedProfile.partner?.id === memberId) {
       updatedProfile.partner.relationshipScore = clamp((updatedProfile.partner.relationshipScore ?? 50) + 10);
+      updatedProfile.partner.lastInteractionDate = state.gameDate;
       memberName = updatedProfile.partner.firstName;
-    } else {
+    }
+    // Check friends
+    else if (updatedProfile.friends) {
+      updatedProfile.friends = updatedProfile.friends.map(m => {
+        if (m.id === memberId) {
+          m.relationshipScore = clamp((m.relationshipScore ?? 50) + 10);
+          m.lastInteractionDate = state.gameDate;
+          memberName = m.firstName;
+        }
+        return m;
+      });
+    }
+    // Check exes
+    if (!memberName && updatedProfile.exes) {
+      updatedProfile.exes = updatedProfile.exes.map(m => {
+        if (m.id === memberId) {
+          m.relationshipScore = clamp((m.relationshipScore ?? 50) + 10);
+          m.lastInteractionDate = state.gameDate;
+          memberName = m.firstName;
+        }
+        return m;
+      });
+    }
+    // Check family
+    if (!memberName) {
       const family = updatedProfile.family;
       if (family) {
         const updateMember = (m: any) => {
           if (m.id === memberId) {
             m.relationshipScore = clamp((m.relationshipScore ?? 50) + 10);
+            m.lastInteractionDate = state.gameDate;
             memberName = m.firstName;
           }
           return m;
         };
+        if (family.grandparents) family.grandparents = family.grandparents.map(updateMember);
         if (family.parents) family.parents = family.parents.map(updateMember);
         if (family.siblings) family.siblings = family.siblings.map(updateMember);
         if (family.children) family.children = family.children.map(updateMember);
+        if (family.grandchildren) family.grandchildren = family.grandchildren.map(updateMember);
       }
     }
 
@@ -551,6 +865,423 @@ const useGameStore = create<GameState>()(
       money: state.money - cost,
     });
     get().addEvent(`Gave a gift to ${memberName}. Relationship +10, Money -${cost}.`);
+  },
+
+  startArgument: (memberId: string) => {
+    const state = get();
+    if (!state.profile) return null;
+
+    const clamp = (v: number) => Math.max(0, Math.min(100, v));
+    let memberName = '';
+    let relationshipChange = 0;
+    let conflictChange = 0;
+    let topic = '';
+    let escalated = false;
+
+    const updatedProfile = { ...state.profile };
+
+    // Helper function to update a member
+    const updateMember = (m: any) => {
+      if (m.id === memberId) {
+        memberName = m.firstName;
+        const currentScore = m.relationshipScore ?? 50;
+        
+        // Import the utility functions
+        const { 
+          getArgumentTopic, 
+          shouldConflictEscalate, 
+          getConflictEscalationMultiplier,
+          addConflictMemory,
+          assignRandomPersonality
+        } = require('../utils/relationshipDecay');
+        
+        // Assign personality if not set
+        if (!m.personality) {
+          m.personality = assignRandomPersonality();
+        }
+        
+        topic = getArgumentTopic(m.relation);
+        
+        // Personality affects escalation chance
+        const escalationMultiplier = getConflictEscalationMultiplier(m.personality);
+        let baseEscalation = shouldConflictEscalate(currentScore);
+        // Apply personality multiplier to escalation
+        escalated = Math.random() < (baseEscalation ? escalationMultiplier : 0.05 * escalationMultiplier);
+        
+        // Base relationship loss
+        relationshipChange = escalated ? -15 : -8;
+        
+        // Increase conflict level
+        const currentConflict = m.conflictLevel ?? 0;
+        conflictChange = escalated ? 20 : 10;
+        
+        m.relationshipScore = clamp(currentScore + relationshipChange);
+        m.conflictLevel = clamp(currentConflict + conflictChange);
+        m.lastInteractionDate = state.gameDate;
+        
+        // Add to conflict memory
+        m.conflictMemory = addConflictMemory(m, topic, escalated ? 'major' : 'minor', state.gameDate);
+      }
+      return m;
+    };
+
+    // Check partner
+    if (updatedProfile.partner?.id === memberId) {
+      updatedProfile.partner = updateMember(updatedProfile.partner);
+    }
+    // Check friends
+    else if (updatedProfile.friends) {
+      updatedProfile.friends = updatedProfile.friends.map(updateMember);
+    }
+    // Check exes
+    if (!memberName && updatedProfile.exes) {
+      updatedProfile.exes = updatedProfile.exes.map(updateMember);
+    }
+    // Check family
+    if (!memberName) {
+      const family = updatedProfile.family;
+      if (family) {
+        if (family.grandparents) family.grandparents = family.grandparents.map(updateMember);
+        if (family.parents) family.parents = family.parents.map(updateMember);
+        if (family.siblings) family.siblings = family.siblings.map(updateMember);
+        if (family.children) family.children = family.children.map(updateMember);
+        if (family.grandchildren) family.grandchildren = family.grandchildren.map(updateMember);
+      }
+    }
+
+    set({
+      profile: updatedProfile,
+      happiness: clamp(state.happiness - (escalated ? 5 : 3)),
+    });
+    
+    const escalationText = escalated ? ' The argument escalated!' : '';
+    get().addEvent(
+      `Had an argument with ${memberName} about ${topic}.${escalationText} Relationship ${relationshipChange}, Conflict +${conflictChange}, Happiness ${escalated ? -5 : -3}.`
+    );
+    
+    // Check if this caused a breakup
+    get().checkAndHandleBreakup(memberId);
+
+    return {
+      memberName,
+      topic,
+      escalated,
+      relationshipChange,
+      conflictChange
+    };
+  },
+
+  apologize: (memberId: string) => {
+    const state = get();
+    if (!state.profile) return;
+
+    const clamp = (v: number) => Math.max(0, Math.min(100, v));
+    let memberName = '';
+    let hadConflict = false;
+    let personalityBonus = '';
+
+    const updatedProfile = { ...state.profile };
+
+    // Helper function to update a member
+    const updateMember = (m: any) => {
+      if (m.id === memberId) {
+        memberName = m.firstName;
+        const currentConflict = m.conflictLevel ?? 0;
+        hadConflict = currentConflict > 0;
+        
+        // Import personality utilities
+        const { getApologyEffectiveness, resolveRecentConflicts, assignRandomPersonality } = require('../utils/relationshipDecay');
+        
+        // Assign personality if not set
+        if (!m.personality) {
+          m.personality = assignRandomPersonality();
+        }
+        
+        // Get personality effectiveness multiplier
+        const effectiveness = getApologyEffectiveness(m.personality);
+        personalityBonus = effectiveness > 1 ? ` (${m.personality} personality +${Math.round((effectiveness - 1) * 100)}%)` : 
+                          effectiveness < 1 ? ` (${m.personality} personality ${Math.round((effectiveness - 1) * 100)}%)` : '';
+        
+        if (hadConflict) {
+          // Apology reduces conflict and improves relationship, affected by personality
+          const baseConflictReduction = Math.min(currentConflict, 30);
+          const conflictReduction = Math.max(1, Math.floor(baseConflictReduction * effectiveness));
+          m.conflictLevel = clamp(currentConflict - conflictReduction);
+          
+          // Relationship improvement is based on how much conflict was resolved
+          // Always give at least +1 relationship boost when resolving conflict
+          const baseRelationshipBoost = Math.max(1, Math.floor(conflictReduction / 3));
+          const relationshipBoost = Math.max(1, Math.floor(baseRelationshipBoost * effectiveness));
+          m.relationshipScore = clamp((m.relationshipScore ?? 50) + relationshipBoost);
+          
+          // Resolve conflicts in memory
+          m.conflictMemory = resolveRecentConflicts(m);
+        } else {
+          // No conflict, but apology still helps a bit
+          const boost = Math.floor(3 * effectiveness);
+          m.relationshipScore = clamp((m.relationshipScore ?? 50) + boost);
+        }
+        
+        m.lastInteractionDate = state.gameDate;
+      }
+      return m;
+    };
+
+    // Check partner
+    if (updatedProfile.partner?.id === memberId) {
+      updatedProfile.partner = updateMember(updatedProfile.partner);
+    }
+    // Check friends
+    else if (updatedProfile.friends) {
+      updatedProfile.friends = updatedProfile.friends.map(updateMember);
+    }
+    // Check exes
+    if (!memberName && updatedProfile.exes) {
+      updatedProfile.exes = updatedProfile.exes.map(updateMember);
+    }
+    // Check family
+    if (!memberName) {
+      const family = updatedProfile.family;
+      if (family) {
+        if (family.grandparents) family.grandparents = family.grandparents.map(updateMember);
+        if (family.parents) family.parents = family.parents.map(updateMember);
+        if (family.siblings) family.siblings = family.siblings.map(updateMember);
+        if (family.children) family.children = family.children.map(updateMember);
+        if (family.grandchildren) family.grandchildren = family.grandchildren.map(updateMember);
+      }
+    }
+
+    set({
+      profile: updatedProfile,
+      happiness: clamp(state.happiness + 2),
+    });
+    
+    if (hadConflict) {
+      get().addEvent(`Apologized to ${memberName}${personalityBonus}. Conflict reduced, relationship improved. Happiness +2.`);
+    } else {
+      get().addEvent(`Apologized to ${memberName}${personalityBonus}. Relationship improved, Happiness +2.`);
+    }
+  },
+
+  makeUp: (memberId: string) => {
+    const state = get();
+    if (!state.profile) return;
+
+    const clamp = (v: number) => Math.max(0, Math.min(100, v));
+    let memberName = '';
+    let wasHighConflict = false;
+
+    const updatedProfile = { ...state.profile };
+
+    // Helper function to update a member
+    const updateMember = (m: any) => {
+      if (m.id === memberId) {
+        memberName = m.firstName;
+        const currentConflict = m.conflictLevel ?? 0;
+        wasHighConflict = currentConflict >= 50; // High conflict threshold
+        
+        if (currentConflict > 0) {
+          // Make-up event: significant relationship boost and conflict resolution
+          // More effective than regular apology, especially for high conflict
+          const bonusMultiplier = wasHighConflict ? 2.0 : 1.5;
+          
+          // Clear most/all conflict
+          const conflictReduction = Math.floor(currentConflict * 0.8); // Remove 80% of conflict
+          m.conflictLevel = clamp(currentConflict - conflictReduction);
+          
+          // Significant relationship boost
+          const relationshipBoost = Math.floor(15 * bonusMultiplier); // Base 15 points, doubled for high conflict
+          m.relationshipScore = clamp((m.relationshipScore ?? 50) + relationshipBoost);
+          
+          // Mark all conflicts as resolved in memory
+          if (m.conflictMemory) {
+            m.conflictMemory = m.conflictMemory.map((c: any) => ({ ...c, resolved: true }));
+          }
+        } else {
+          // No conflict, but still strengthens relationship
+          m.relationshipScore = clamp((m.relationshipScore ?? 50) + 8);
+        }
+        
+        m.lastInteractionDate = state.gameDate;
+      }
+      return m;
+    };
+
+    // Check partner
+    if (updatedProfile.partner?.id === memberId) {
+      updatedProfile.partner = updateMember(updatedProfile.partner);
+    }
+    // Check friends
+    else if (updatedProfile.friends) {
+      updatedProfile.friends = updatedProfile.friends.map(updateMember);
+    }
+    // Check exes
+    if (!memberName && updatedProfile.exes) {
+      updatedProfile.exes = updatedProfile.exes.map(updateMember);
+    }
+    // Check family
+    if (!memberName) {
+      const family = updatedProfile.family;
+      if (family) {
+        if (family.grandparents) family.grandparents = family.grandparents.map(updateMember);
+        if (family.parents) family.parents = family.parents.map(updateMember);
+        if (family.siblings) family.siblings = family.siblings.map(updateMember);
+        if (family.children) family.children = family.children.map(updateMember);
+        if (family.grandchildren) family.grandchildren = family.grandchildren.map(updateMember);
+      }
+    }
+
+    set({
+      profile: updatedProfile,
+      happiness: clamp(state.happiness + (wasHighConflict ? 5 : 3)),
+    });
+    
+    if (wasHighConflict) {
+      get().addEvent(`💕 Made up with ${memberName} after serious conflicts. Relationship greatly improved! Happiness +5.`);
+    } else {
+      get().addEvent(`💕 Had a heartfelt make-up moment with ${memberName}. Relationship strengthened! Happiness +3.`);
+    }
+  },
+
+  checkAndHandleBreakup: (memberId: string) => {
+    const state = get();
+    if (!state.profile) return false;
+
+    const updatedProfile = { ...state.profile };
+    let didBreakup = false;
+    let memberName = '';
+
+    // Check if partner and relationship is at 0
+    if (updatedProfile.partner?.id === memberId) {
+      const score = updatedProfile.partner.relationshipScore ?? 50;
+      
+      if (score <= 0) {
+        // Move to exes
+        memberName = updatedProfile.partner.firstName;
+        const ex = { ...updatedProfile.partner, relation: 'ex' as const, status: 'Broken up' };
+        
+        if (!updatedProfile.exes) {
+          updatedProfile.exes = [];
+        }
+        updatedProfile.exes.push(ex);
+        updatedProfile.partner = null;
+        didBreakup = true;
+        
+        set({ profile: updatedProfile });
+        get().addEvent(`💔 Your relationship with ${memberName} has ended. You are no longer partners.`);
+        
+        Toast.show({
+          type: 'error',
+          text1: '💔 Relationship Ended',
+          text2: `You and ${memberName} have broken up`,
+          visibilityTime: 5000,
+        });
+      }
+    }
+
+    return didBreakup;
+  },
+
+  complimentFamilyMember: (memberId: string) => {
+    const state = get();
+    if (!state.profile) return;
+
+    const clamp = (v: number) => Math.max(0, Math.min(100, v));
+    let memberName = '';
+
+    const updatedProfile = { ...state.profile };
+
+    // Helper function to update a member
+    const updateMember = (m: any) => {
+      if (m.id === memberId) {
+        memberName = m.firstName;
+        m.relationshipScore = clamp((m.relationshipScore ?? 50) + 2);
+        m.lastInteractionDate = state.gameDate;
+      }
+      return m;
+    };
+
+    // Check partner
+    if (updatedProfile.partner?.id === memberId) {
+      updatedProfile.partner = updateMember(updatedProfile.partner);
+    }
+    // Check friends
+    else if (updatedProfile.friends) {
+      updatedProfile.friends = updatedProfile.friends.map(updateMember);
+    }
+    // Check exes
+    if (!memberName && updatedProfile.exes) {
+      updatedProfile.exes = updatedProfile.exes.map(updateMember);
+    }
+    // Check family
+    if (!memberName) {
+      const family = updatedProfile.family;
+      if (family) {
+        if (family.grandparents) family.grandparents = family.grandparents.map(updateMember);
+        if (family.parents) family.parents = family.parents.map(updateMember);
+        if (family.siblings) family.siblings = family.siblings.map(updateMember);
+        if (family.children) family.children = family.children.map(updateMember);
+        if (family.grandchildren) family.grandchildren = family.grandchildren.map(updateMember);
+      }
+    }
+
+    set({
+      profile: updatedProfile,
+      happiness: clamp(state.happiness + 1),
+    });
+    
+    get().addEvent(`Complimented ${memberName}. Relationship +2, Happiness +1.`);
+  },
+
+  conversationWithFamilyMember: (memberId: string) => {
+    const state = get();
+    if (!state.profile) return;
+
+    const clamp = (v: number) => Math.max(0, Math.min(100, v));
+    let memberName = '';
+
+    const updatedProfile = { ...state.profile };
+
+    // Helper function to update a member
+    const updateMember = (m: any) => {
+      if (m.id === memberId) {
+        memberName = m.firstName;
+        m.relationshipScore = clamp((m.relationshipScore ?? 50) + 3);
+        m.lastInteractionDate = state.gameDate;
+      }
+      return m;
+    };
+
+    // Check partner
+    if (updatedProfile.partner?.id === memberId) {
+      updatedProfile.partner = updateMember(updatedProfile.partner);
+    }
+    // Check friends
+    else if (updatedProfile.friends) {
+      updatedProfile.friends = updatedProfile.friends.map(updateMember);
+    }
+    // Check exes
+    if (!memberName && updatedProfile.exes) {
+      updatedProfile.exes = updatedProfile.exes.map(updateMember);
+    }
+    // Check family
+    if (!memberName) {
+      const family = updatedProfile.family;
+      if (family) {
+        if (family.grandparents) family.grandparents = family.grandparents.map(updateMember);
+        if (family.parents) family.parents = family.parents.map(updateMember);
+        if (family.siblings) family.siblings = family.siblings.map(updateMember);
+        if (family.children) family.children = family.children.map(updateMember);
+        if (family.grandchildren) family.grandchildren = family.grandchildren.map(updateMember);
+      }
+    }
+
+    set({
+      profile: updatedProfile,
+      happiness: clamp(state.happiness + 2),
+    });
+    
+    get().addEvent(`Had a conversation with ${memberName}. Relationship +3, Happiness +2.`);
   },
 
   // Career actions

@@ -153,9 +153,9 @@ Legacy enrollment tests:
 ✓ successful enrollment deducts money and sets currentEnrollment
 ```
 
-## Future Enhancements
-Consider adding:
-- Real-time GPA tracking during enrollment
-- Skill progression visualization
-- Course-specific stat boosts display
-- Enrollment history in profile
+## Implemented Enhancements
+✅ Real-time GPA tracking during enrollment
+✅ University re-enrollment system with completed course tracking
+✅ "Completed" badges for finished university courses
+✅ Ability to switch between different university programs
+✅ Grey-out styling for already-completed courses

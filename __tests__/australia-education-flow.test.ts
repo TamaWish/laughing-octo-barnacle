@@ -13,16 +13,17 @@ describe('Australia Education System - Complete Flow Verification', () => {
     const catalog = COUNTRY_EDUCATION_MAP['AU'];
     
     expect(catalog).toBeDefined();
-    expect(catalog.courses.preschool).toBeDefined();
+    expect(catalog.courses.kindergarten).toBeDefined();
     expect(catalog.courses.primary).toBeDefined();
     expect(catalog.courses.secondary).toBeDefined();
+    expect(catalog.courses.university).toBeDefined();
 
-    // Check preschool/kindergarten
-    const publicPreschool = catalog.courses.preschool.find(c => c.cost === 0);
-    expect(publicPreschool).toBeDefined();
-    expect(publicPreschool?.requiredAge).toBe(3);
-    expect(publicPreschool?.duration).toBe(2);
-    expect(publicPreschool?.grantsStatus).toBe(0);
+    // Check kindergarten
+    const publicKindergarten = catalog.courses.kindergarten.find(c => c.cost === 0);
+    expect(publicKindergarten).toBeDefined();
+    expect(publicKindergarten?.requiredAge).toBe(3);
+    expect(publicKindergarten?.duration).toBe(2);
+    expect(publicKindergarten?.grantsStatus).toBe(1);
 
     // Check primary school
     const primary = catalog.courses.primary[0];
@@ -63,7 +64,7 @@ describe('Australia Education System - Complete Flow Verification', () => {
     
     expect(state.age).toBe(3);
     expect(state.isCurrentlyEnrolled).toBe(true);
-    expect(state.currentEnrollment?.name).toContain('Preschool');
+    expect(state.currentEnrollment?.name).toContain('Kindergarten');
     expect(state.currentEnrollment?.timeRemaining).toBe(2);
     expect(state.educationStatus).toBe(0); // Still status 0
   });
@@ -71,19 +72,19 @@ describe('Australia Education System - Complete Flow Verification', () => {
   it('should complete kindergarten at age 5 and auto-enroll in primary (Australia)', () => {
     // Start at age 3, enrolled in kindergarten
     const catalog = COUNTRY_EDUCATION_MAP['AU'];
-    const preschool = catalog.courses.preschool.find(c => c.cost === 0);
+    const kindergarten = catalog.courses.kindergarten.find((c: any) => c.cost === 0);
     
     useGameStore.setState({
       age: 3,
       educationStatus: 0,
       isCurrentlyEnrolled: true,
       currentEnrollment: {
-        id: preschool!.id,
-        name: preschool!.name,
+        id: kindergarten!.id,
+        name: kindergarten!.name,
         duration: 2,
         timeRemaining: 2,
         cost: 0,
-        grantsStatus: 0,
+        grantsStatus: 1,
       },
       profile: { 
         avatar: 1, 
@@ -166,7 +167,7 @@ describe('Australia Education System - Complete Flow Verification', () => {
     });
 
     const catalog = COUNTRY_EDUCATION_MAP['AU'];
-    const preschool = catalog.courses.preschool.find(c => c.cost === 0);
+    const kindergarten = catalog.courses.kindergarten.find((c: any) => c.cost === 0);
     const primary = catalog.courses.primary[0];
     const secondary = catalog.courses.secondary[0];
 
@@ -174,7 +175,7 @@ describe('Australia Education System - Complete Flow Verification', () => {
     useGameStore.getState().advanceYear();
     let state = useGameStore.getState();
     expect(state.age).toBe(3);
-    expect(state.currentEnrollment?.name).toBe(preschool?.name);
+    expect(state.currentEnrollment?.name).toBe(kindergarten?.name);
     
     // Age 3 -> 4: Still in kindergarten
     useGameStore.getState().advanceYear();

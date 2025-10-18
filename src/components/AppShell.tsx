@@ -6,6 +6,7 @@ import Toast from 'react-native-toast-message';
 import { characters, resolveAvatar } from '../constants/characters';
 import useGameStore from '../store/gameStore';
 import { NAV_HEIGHT } from '../constants/ui';
+import EnrollmentHistory from './EnrollmentHistory';
 
 const NEW_KEY = 'simslyfe-saves';
 const NEW_CURRENT_KEY = 'simslyfe-current';
@@ -21,6 +22,7 @@ export default function AppShell({ children, navigation }: any) {
   const isCurrentlyEnrolled = useGameStore((s) => s.isCurrentlyEnrolled);
   const currentEnrollment = useGameStore((s) => s.currentEnrollment);
   const gameDate = useGameStore((s) => s.gameDate);
+  const enrollmentHistory = useGameStore((s) => s.enrollmentHistory);
 
   const avatarSource = profile ? resolveAvatar(profile) : undefined;
 
@@ -230,7 +232,7 @@ export default function AppShell({ children, navigation }: any) {
             <Text style={[styles.smallIconLabel, currentGameTab === 'Career' && styles.smallIconLabelActive]}>Career</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.navItem, currentGameTab === 'Relationships' && styles.navItemActive]} onPress={() => goToGameTab('Relationships')}>
+          <TouchableOpacity style={[styles.navItem, currentGameTab === 'Relationships' && styles.navItemActive]} onPress={() => { const setTab = useGameStore.getState().setCurrentGameTab; setTab && setTab('Relationships'); navigation && navigation.navigate('Relationships'); }}>
             <MaterialCommunityIcons name="account-heart-outline" size={22} color={currentGameTab === 'Relationships' ? '#2ecc71' : '#fff'} />
             <Text style={[styles.smallIconLabel, currentGameTab === 'Relationships' && styles.smallIconLabelActive]}>Relationships</Text>
           </TouchableOpacity>
@@ -402,6 +404,9 @@ export default function AppShell({ children, navigation }: any) {
                   </View>
                 </View>
               </View>
+
+              {/* Education History Section */}
+              <EnrollmentHistory history={enrollmentHistory} />
 
               {/* Quick links moved from bottom nav: Assets & Skills */}
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>

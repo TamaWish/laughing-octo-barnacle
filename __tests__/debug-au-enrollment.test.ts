@@ -49,19 +49,19 @@ describe('Debug Australia Kindergarten to Primary Transition', () => {
   it('should auto-enroll immediately when manually advancing from kindergarten completion', () => {
     // Start at age 4 in last year of kindergarten
     const catalog = COUNTRY_EDUCATION_MAP['AU'];
-    const preschool = catalog.courses.preschool.find(c => c.cost === 0);
+    const kindergarten = catalog.courses.kindergarten.find((c: any) => c.cost === 0);
 
     useGameStore.setState({
       age: 4,
       educationStatus: 0,
       isCurrentlyEnrolled: true,
       currentEnrollment: {
-        id: preschool!.id,
-        name: preschool!.name,
+        id: kindergarten!.id,
+        name: kindergarten!.name,
         duration: 2,
         timeRemaining: 1,
         cost: 0,
-        grantsStatus: 0,
+        grantsStatus: 1,
       },
       profile: { 
         avatar: 1, 
